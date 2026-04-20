@@ -1,3 +1,4 @@
+import atexit
 from pathlib import Path
 import time
 
@@ -14,6 +15,8 @@ DEFAULT_CONFIDENCE = 0.5
 DEFAULT_FRAME_COUNT = 8
 
 _MODEL = None
+_CAMERA = None
+_CAMERA_STARTED = False
 
 
 def load_model():
@@ -32,6 +35,40 @@ def create_camera():
     )
     picam2.configure(config)
     return picam2
+
+
+def get_camera():
+    global _CAMERA
+
+    if _CAMERA is None:
+        _CAMERA = create_camera()
+
+    return _CAMERA
+
+
+def ensure_camera_started(warmup_seconds=1.0):
+    global _CAMERA_STARTED
+
+    picam2 = get_camera()
+    if not _CAMERA_STARTED:
+        picam2.start()
+        time.sleep(warmup_seconds)
+        _CAMERA_STARTED = True
+
+    return picam2
+
+
+def close_camera():
+    global _CAMERA
+    global _CAMERA_STARTED
+
+    if _CAMERA is not None:
+        if _CAMERA_STARTED:
+            _CAMERA.stop()
+        _CAMERA.close()
+
+    _CAMERA = None
+    _CAMERA_STARTED = False
 
 
 def best_allowed_detection(results, model, conf_threshold=DEFAULT_CONFIDENCE):
@@ -64,24 +101,18 @@ def detect_allowed_pet(
     warmup_seconds=1.0,
 ):
     model = load_model()
-    picam2 = create_camera()
+    picam2 = ensure_camera_started(warmup_seconds)
     best_match = None
 
-    picam2.start()
-    time.sleep(warmup_seconds)
+    for _ in range(frame_count):
+        frame = picam2.capture_array()
+        results = model(frame, verbose=False)
+        candidate = best_allowed_detection(results, model, conf_threshold)
 
-    try:
-        for _ in range(frame_count):
-            frame = picam2.capture_array()
-            results = model(frame, verbose=False)
-            candidate = best_allowed_detection(results, model, conf_threshold)
-
-            if candidate and (
-                best_match is None or candidate["confidence"] > best_match["confidence"]
-            ):
-                best_match = candidate
-    finally:
-        picam2.stop()
+        if candidate and (
+            best_match is None or candidate["confidence"] > best_match["confidence"]
+        ):
+            best_match = candidate
 
     return best_match
 
@@ -92,13 +123,11 @@ def run_live_preview(
     save_dir=CAPTURE_DIR,
 ):
     model = load_model()
-    picam2 = create_camera()
+    picam2 = ensure_camera_started(2)
     save_path = Path(save_dir)
     last_save_time = 0.0
 
     save_path.mkdir(parents=True, exist_ok=True)
-    picam2.start()
-    time.sleep(2)
 
     try:
         while True:
@@ -139,7 +168,10 @@ def run_live_preview(
                 break
     finally:
         cv2.destroyAllWindows()
-        picam2.stop()
+        close_camera()
+
+
+atexit.register(close_camera)
 
 
 if __name__ == "__main__":

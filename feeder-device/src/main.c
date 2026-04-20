@@ -13,7 +13,46 @@
 
 #define HX711_DOUT GPIO_NUM_7
 #define HX711_SCK  GPIO_NUM_18
+
+
+#define SERVO_GPIO          18
+#define SERVO_MODE          LEDC_HIGH_SPEED_MODE
+#define SERVO_TIMER         LEDC_TIMER_0
+#define SERVO_CHANNEL       LEDC_CHANNEL_0
+#define SERVO_FREQ          50
+#define SERVO_RESOLUTION    LEDC_TIMER_15_BIT
+
+#define SERVO_START_DUTY    1638
+#define SERVO_STEP          14
+#define SERVO_TOTAL_CYCLES  117
+#define SERVO_DELAY_MS      10
+
+static int current_duty = SERVO_START_DUTY;
 uint8_t movement = 0;
+
+void servo_init(void)
+{
+    ledc_timer_config_t timer_conf = {
+        .duty_resolution = SERVO_RESOLUTION,
+        .freq_hz = SERVO_FREQ,
+        .speed_mode = SERVO_MODE,
+        .timer_num = SERVO_TIMER,
+        .clk_cfg = LEDC_AUTO_CLK
+    };
+
+    ledc_timer_config(&timer_conf);
+
+    ledc_channel_config_t ledc_conf = {
+        .channel = SERVO_CHANNEL,
+        .duty = current_duty,
+        .gpio_num = SERVO_GPIO,
+        .intr_type = LEDC_INTR_DISABLE,
+        .speed_mode = SERVO_MODE,
+        .timer_sel = SERVO_TIMER,
+    };
+
+    ledc_channel_config(&ledc_conf);
+}
 
 void servoGo_task(void *parameters) {
     int duty = 1638;
@@ -77,7 +116,7 @@ void pirGo_task (void *parameters) {
             uart_comm_send_string("write open\r\n");
             last_state = current_state; 
         }
-       vTaskDelay(pdMS_TO_TICKS(2500));
+       vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 
@@ -183,11 +222,46 @@ static void uart_txGo(void *parameters)
     
 }
 
+
+void servo_open_task(void *parameters)
+{
+    for (int i = 0; i < SERVO_TOTAL_CYCLES; i++) {
+        current_duty += SERVO_STEP;
+
+        ledc_set_duty(SERVO_MODE, SERVO_CHANNEL, current_duty);
+        ledc_update_duty(SERVO_MODE, SERVO_CHANNEL);
+
+        vTaskDelay(pdMS_TO_TICKS(SERVO_DELAY_MS));
+    }
+     // Stop sending PWM so the servo is no longer forced
+    ledc_stop(SERVO_MODE, SERVO_CHANNEL, 0);
+
+    vTaskDelete(NULL);
+}
+
+void servo_close_task(void *parameters)
+{
+    for (int i = 0; i < SERVO_TOTAL_CYCLES; i++) {
+        current_duty -= SERVO_STEP;
+
+        ledc_set_duty(SERVO_MODE, SERVO_CHANNEL, current_duty);
+        ledc_update_duty(SERVO_MODE, SERVO_CHANNEL);
+
+        vTaskDelay(pdMS_TO_TICKS(SERVO_DELAY_MS));
+    }
+
+     // Stop sending PWM so the servo is no longer forced
+    ledc_stop(SERVO_MODE, SERVO_CHANNEL, 0);
+    vTaskDelete(NULL);
+}
+
 void app_main(void) {
     //xTaskCreate(&servoGo_task, "servoTASK", 2048, NULL, 5, NULL);
     //xTaskCreate(&clockGo_task, "CLK", 2048, NULL, 5, NULL );
     //xTaskCreate(&loadCellGo, "load cell task", 2048, NULL, 5, NULL); 
     //xTaskCreate(&weightGo, "weights", 2048, NULL, 5, NULL);
+        servo_init();
+
     xTaskCreate(&pirGo_task, "PIR_TASK", 2048, NULL, 5, NULL);
 
 
@@ -207,23 +281,23 @@ void app_main(void) {
 
         // if (movement == 1){
         //printf("movement %d", movement);
+
     
         int len = uart_comm_read_string((char*)rx_buff, sizeof(rx_buff)- 1, 5000);
         strncpy(command, (char*)rx_buff, sizeof(command) - 1);
         command[sizeof(command)-1] = '\0';
         printf("Received: %s\n", command);
-
             
         char open[] = "open";
         char close[] = "close";
         int Opencmp = strcmp (command, open);
         if (Opencmp == 0){
-            xTaskCreate(&servoGo_task, "servoTASK", 2048, NULL, 2, NULL);
-        }
+// Open servo
+    xTaskCreate(servo_open_task, "servo_open_task", 2048, NULL, 5, NULL);        }
         int Closecmp = strcmp(command, close);
         if (Closecmp == 0){
-            //stop the task
-        }
+// Close servo
+    xTaskCreate(servo_close_task, "servo_close_task", 2048, NULL, 5, NULL);        }
         uart_comm_send_string("You typed: ");
         uart_comm_send_bytes(rx_buff, len);
         uart_comm_send_string("\r\n");

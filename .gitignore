@@ -17,3 +17,6 @@ Thumbs.db
 
 # VS Code
 .vscode/
+
+# Pet recognition generated artifacts
+ai-model/pet-recognition/pet_profiles.npz

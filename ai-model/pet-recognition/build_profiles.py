@@ -3,12 +3,20 @@ from pathlib import Path
 from pet_recognizer import PetRecognizer, image_files, save_profiles
 
 
-BASE_DIR = Path("ai-model/pet-recognition/known_pets")
-PROFILE_PATH = Path("ai-model/pet-recognition/pet_profiles.npz")
+SCRIPT_DIR = Path(__file__).resolve().parent
 
-PET_FOLDERS = {
-    "spiderman": BASE_DIR / "pet1",
-    "grogu": BASE_DIR / "pet2",
+BASE_DIR = SCRIPT_DIR / "known_pets"
+PROFILE_PATH = SCRIPT_DIR / "pet_profiles.npz"
+
+PET_TRAIN_FOLDERS = {
+    "spiderman": [
+        BASE_DIR / "pet1" / "train",
+        BASE_DIR / "pet1" / "train_camera",
+    ],
+    "grogu": [
+        BASE_DIR / "pet2" / "train",
+        BASE_DIR / "pet2" / "train_camera",
+    ],
 }
 
 
@@ -19,18 +27,25 @@ def main():
 
     profiles = {}
 
-    for pet_name, pet_folder in PET_FOLDERS.items():
-        train_folder = pet_folder / "train"
-        profiles[pet_name] = recognizer.build_profile(train_folder)
+    for pet_name, train_folders in PET_TRAIN_FOLDERS.items():
+        profiles[pet_name] = recognizer.build_profile_from_folders(train_folders)
+        image_count = count_images(train_folders)
 
-        print(
-            f"Built profile for {pet_name} "
-            f"using {len(image_files(train_folder))} images."
-        )
+        print(f"Built profile for {pet_name} using {image_count} images.")
 
     save_profiles(profiles, PROFILE_PATH)
 
     print(f"\nSaved profiles to {PROFILE_PATH}")
+
+
+def count_images(folders: list[Path]) -> int:
+    total = 0
+
+    for folder in folders:
+        if folder.exists():
+            total += len(image_files(folder))
+
+    return total
 
 
 if __name__ == "__main__":

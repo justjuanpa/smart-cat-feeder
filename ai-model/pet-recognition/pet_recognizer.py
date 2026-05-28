@@ -45,6 +45,22 @@ class PetRecognizer:
 
         return self._normalize(profile, f"profile for {train_folder}")
 
+    def build_profile_from_folders(self, train_folders: list[Path]) -> np.ndarray:
+        all_files = []
+
+        for train_folder in train_folders:
+            if train_folder.exists():
+                all_files.extend(image_files(train_folder))
+
+        if not all_files:
+            folder_list = ", ".join(str(folder) for folder in train_folders)
+            raise FileNotFoundError(f"No training images found in: {folder_list}")
+
+        embeddings = [self.get_embedding(file) for file in all_files]
+        profile = np.mean(embeddings, axis=0)
+
+        return self._normalize(profile, f"profile for {train_folders}")
+
     def recognize(self, img_path: Path, profiles: dict[str, np.ndarray]) -> dict:
         test_embedding = self.get_embedding(img_path)
 

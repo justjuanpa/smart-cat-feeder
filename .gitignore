@@ -20,6 +20,7 @@ Thumbs.db
 
 # Pet recognition generated artifacts
 ai-model/pet-recognition/pet_profiles.npz
+ai-model/pet-recognition/pet_profiles_phone_sim.npz
 ai-model/pet-recognition/live_burst_debug/
 ai-model/pet-recognition/yolo_crop_tests/
 ai-model/pet-recognition/crop_tests/

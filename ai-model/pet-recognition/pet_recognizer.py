@@ -14,9 +14,11 @@ class PetRecognizer:
         self,
         similarity_threshold: float = 0.70,
         margin_threshold: float = 0.08,
+        top_k: int = 3,
     ):
         self.similarity_threshold = similarity_threshold
         self.margin_threshold = margin_threshold
+        self.top_k = top_k
 
         self.weights = MobileNet_V2_Weights.DEFAULT
         self.model = mobilenet_v2(weights=self.weights)
@@ -46,27 +48,29 @@ class PetRecognizer:
         return self._normalize(profile, f"profile for {train_folder}")
 
     def build_profile_from_folders(self, train_folders: list[Path]) -> np.ndarray:
-        all_files = []
-
-        for train_folder in train_folders:
-            if train_folder.exists():
-                all_files.extend(image_files(train_folder))
-
-        if not all_files:
-            folder_list = ", ".join(str(folder) for folder in train_folders)
-            raise FileNotFoundError(f"No training images found in: {folder_list}")
+        all_files = self._collect_training_files(train_folders)
 
         embeddings = [self.get_embedding(file) for file in all_files]
         profile = np.mean(embeddings, axis=0)
 
         return self._normalize(profile, f"profile for {train_folders}")
 
+    def build_embedding_set_from_folders(self, train_folders: list[Path]) -> np.ndarray:
+        all_files = self._collect_training_files(train_folders)
+        embeddings = [self.get_embedding(file) for file in all_files]
+
+        return np.stack(embeddings, axis=0)
+
     def recognize(self, img_path: Path, profiles: dict[str, np.ndarray]) -> dict:
         test_embedding = self.get_embedding(img_path)
 
         scores = {
-            pet_name: cosine_similarity(test_embedding, profile)
-            for pet_name, profile in profiles.items()
+            pet_name: profile_similarity(
+                test_embedding,
+                profile_vectors,
+                top_k=self.top_k,
+            )
+            for pet_name, profile_vectors in profiles.items()
         }
 
         ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
@@ -92,6 +96,19 @@ class PetRecognizer:
             "accepted": accepted,
         }
 
+    def _collect_training_files(self, train_folders: list[Path]) -> list[Path]:
+        all_files = []
+
+        for train_folder in train_folders:
+            if train_folder.exists():
+                all_files.extend(image_files(train_folder))
+
+        if not all_files:
+            folder_list = ", ".join(str(folder) for folder in train_folders)
+            raise FileNotFoundError(f"No training images found in: {folder_list}")
+
+        return all_files
+
     def _normalize(self, vector: np.ndarray, label: str) -> np.ndarray:
         norm = np.linalg.norm(vector)
 
@@ -107,6 +124,21 @@ def image_files(folder: Path) -> list[Path]:
 
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.dot(a, b))
+
+
+def profile_similarity(
+    test_embedding: np.ndarray,
+    profile_vectors: np.ndarray,
+    top_k: int = 3,
+) -> float:
+    if profile_vectors.ndim == 1:
+        return cosine_similarity(test_embedding, profile_vectors)
+
+    similarities = profile_vectors @ test_embedding
+    k = min(top_k, len(similarities))
+    top_scores = np.sort(similarities)[-k:]
+
+    return float(np.mean(top_scores))
 
 
 def save_profiles(profiles: dict[str, np.ndarray], output_path: Path) -> None:

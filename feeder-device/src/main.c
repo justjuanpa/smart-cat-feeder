@@ -136,7 +136,7 @@ void clockGo_task (void *parameters){
     ledc_channel_config_t ledc_conf = {
         .channel = LEDC_CHANNEL_0,
         .duty = 1, 
-        .gpio_num = 18,
+        .gpio_num = SERVO_GPIO,
         .intr_type = LEDC_INTR_DISABLE,
         .speed_mode = LEDC_HIGH_SPEED_MODE,
         .timer_sel = LEDC_TIMER_0,

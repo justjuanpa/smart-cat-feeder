@@ -1,0 +1,17 @@
+the led is a nice and nessary addition to the feeder
+it will allow for pets to get fed in the night time where light would not be avaible 
+
+since the pir sensor works in the dark there are many way of going about keeping the feeder ready for night time mode 
+
+if the pir sensor is high trigger the lux sensor to gather the lux data in a room and give proper brightness to the led 
+the other apporach is to not use the pir sensor at all and use the lux sensor to always determine the brightness 
+
+im in favor of appoch 2 cause the pir is already hooked up to one work flow; but at the same time it could make the feeder very power
+efficent; maybe we can have users set this setting in the app and use uart comms to change the mode (actually this seems like a great appoarch)
+
+for the thrid appoarch made i guess it is imporatant to look into how to configure the pi to host a webpage maybe it needs to have wifi setup? 
+guess i have to look into the pi for this 
+
+back to lux to led i want at least appoarch 2 done for demo day 
+i also want to use an interrupt on the lux sensor to make this efficent power consumption wise 
+the led strip consumes a little over 1 amp and operatates at 5 volts at its brightest  

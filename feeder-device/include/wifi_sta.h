@@ -2,6 +2,9 @@
 #define WIFI_STA_H
 
 #include "esp_err.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
+
 
 #define WIFI_STA_CONNECTED_BIT BIT0
 #define WIFI_STA_IPV4_OBTAINED_BIT BIT1
@@ -10,7 +13,7 @@
 /** 
  * @brief Initalize WiFi in station (STA) mode
  * 
- * Set up the WiFi interfrace ad connect to a WiFi network. You can use the 
+ * Set up the WiFi interfrace and connect to a WiFi network. You can use the 
  * event group to wait for a connection and IP address assignment.
  * 
  * Important! You must call esp_netif_init() and eso_event_loop_create_default()

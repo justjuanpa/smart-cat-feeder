@@ -1,310 +1,133 @@
-#include <stdio.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "freertos/queue.h"
-#include <stdbool.h>
-#include <string.h>
-#include "sdkconfig.h"
+#include <stdio.h> //obviously needed for c applications
+
+#include "freertos/FreeRTOS.h" //need for tasks
+#include "freertos/event_groups.h" 
+#include "esp_err.h"
+#include "esp_log.h"          // for ESP_LOGV, ESP_LOGI, esp_log_level_set
+#include "servo.h"
+#include "stepper.h"
+#include "ledstrip.h"
 #include "jay_hx711.h"
 #include "uart_comm.h"
-#include "driver/ledc.h"
+#include <string.h>
 
 
+#define PIR_PIN GPIO_NUM_4
+char pi_command[256];
+char esp_command[256] = "PIR TRIGGERED\r\n";
 
-#define HX711_DOUT GPIO_NUM_7
-#define HX711_SCK  GPIO_NUM_18
+//PIR Semaphore
+static SemaphoreHandle_t xPIRSem; //maybe i should do the same for the lux sensor 
+static const char *TAG = "example";
+
+//PIR ISR
+void IRAM_ATTR PIR_ISR(void *parameter){
+    BaseType_t xHigherPrioTaskWoken = pdFALSE;
+    xSemaphoreGiveFromISR(xPIRSem, &xHigherPrioTaskWoken);
+    if (xHigherPrioTaskWoken == pdTRUE){
+        portYIELD_FROM_ISR();
+    }
+}
+
+void UART_task(void *parameters){   
+    uart_comm_init(); //initalize UART
+    //printf("ESP32 ready\r\n");
+
+      printf("PIR level = %d\n", gpio_get_level(PIR_PIN));
+        fflush(stdout);
+
+    TickType_t currentTime = xTaskGetTickCount();
+    TickType_t previousTime = 0; //prev 2 are for intrrupt timing
+
+    while(1) {
+        if (xSemaphoreTake(xPIRSem, pdMS_TO_TICKS(20)) == pdTRUE){
+            previousTime = currentTime;
+            currentTime = xTaskGetTickCount();
+            printf("prev: %lu & curr: %lu \n", previousTime, currentTime);
+            if ((currentTime-previousTime) > pdMS_TO_TICKS(3000)){ //if the pir sensor interrupt went of time do uart stuff
+                //vTaskDelay(pdMS_TO_TICKS(3000));
+                printf("Reached\n");
+                vTaskDelay(pdMS_TO_TICKS(50));
+                uart_comm_send_string(esp_command); //send the pir trigger command from esp to pi 
+                vTaskDelay(pdMS_TO_TICKS(50));
+                printf("Sent %s:", esp_command);
+            }
+        }
+
+        int len = uart_comm_read_string(pi_command, sizeof(pi_command) - 1, 1000);
+        if (len <= 0){
+            vTaskDelay(pdMS_TO_TICKS(50));
+            continue;
+        }
 
 
-#define SERVO_GPIO          18
-#define SERVO_MODE          LEDC_HIGH_SPEED_MODE
-#define SERVO_TIMER         LEDC_TIMER_0
-#define SERVO_CHANNEL       LEDC_CHANNEL_0
-#define SERVO_FREQ          50
-#define SERVO_RESOLUTION    LEDC_TIMER_15_BIT
+       trim_command(pi_command);
+        if (pi_command[0] == '\0'){
+            continue;
+        }
 
-#define SERVO_START_DUTY    1638
-#define SERVO_STEP          14
-#define SERVO_TOTAL_CYCLES  117
-#define SERVO_DELAY_MS      10
+        printf("Recieved: %s\n", pi_command);
+        if (strcmp(pi_command, "RIGHT") == 0 || strcmp(pi_command, "ALLOW") == 0 || strcmp(pi_command, "OPEN") == 0){ //if the raspberry pi says to open the right side
+            vTaskDelay(pdMS_TO_TICKS(50));
+            printf("This is where you should open the right servo and load cell task\n");
+            load_cell_task_en(true); //what should happen when this is false? 
+            //also should i make this for like the right side or something 
+            //for now ill make the command allow or open cause thats what the code has
 
-static int current_duty = SERVO_START_DUTY;
-uint8_t movement = 0;
+            //open right servo 
+            //activate the load cell task for right load cell and the stepper 
+            //ill need load cell enable functions 
+            //and servo enable functions
+        }
 
-void servo_init(void)
+        if (strcmp(pi_command, "LEFT") == 0){ //if the raspberry pi says to open the left side 
+            printf("This is where you should open the left servo and load cell task");
+            //open the left servo 
+            //activate the load cell task for left load cell and the stepper 
+        }
+
+        // if (strcmp(pi_command, "NONE") == 0){ //if the raspberry pi saus to do nothing
+            //ths one may not be nessary at the moment
+        // }
+
+                //the if statemments are seperate if statements instead of 
+                //if else statement because both pets can have the food dispense at the same time 
+                //if order to do this the if statements have to be different 
+    }
+}
+
+//instead of making a seprate file for the pir sensor im going to implement it here in the main
+//i feel like the main is a proper place for this task as the pir sensor is the of the system
+//additionally it is implemented as an interrupt so there is no need to make a task for it
+void app_main(void)
 {
-    ledc_timer_config_t timer_conf = {
-        .duty_resolution = SERVO_RESOLUTION,
-        .freq_hz = SERVO_FREQ,
-        .speed_mode = SERVO_MODE,
-        .timer_num = SERVO_TIMER,
-        .clk_cfg = LEDC_AUTO_CLK
-    };
-
-    ledc_timer_config(&timer_conf);
-
-    ledc_channel_config_t ledc_conf = {
-        .channel = SERVO_CHANNEL,
-        .duty = current_duty,
-        .gpio_num = SERVO_GPIO,
-        .intr_type = LEDC_INTR_DISABLE,
-        .speed_mode = SERVO_MODE,
-        .timer_sel = SERVO_TIMER,
-    };
-
-    ledc_channel_config(&ledc_conf);
-}
-
-void servoGo_task(void *parameters) {
-    int duty = 1638;
-    int step = 14; 
-    int total_cycles = 117;
-    bool pos_direction = true;
-    int iteration_time = 10; //millseconds
-
-    ledc_timer_config_t timer_conf = {
-        .duty_resolution = LEDC_TIMER_15_BIT,
-        .freq_hz = 50,
-        .speed_mode = LEDC_HIGH_SPEED_MODE,
-        .timer_num = LEDC_TIMER_0,
-        .clk_cfg = LEDC_AUTO_CLK
-    };
-
-    ledc_timer_config(&timer_conf); //apply timer config
-
-    ledc_channel_config_t ledc_conf = {
-        .channel = LEDC_CHANNEL_0,
-        .duty = duty,
-        .gpio_num = 18, 
-        .intr_type = LEDC_INTR_DISABLE,
-        .speed_mode = LEDC_HIGH_SPEED_MODE,
-        .timer_sel = LEDC_TIMER_0,
-    };
-
-    ledc_channel_config(&ledc_conf);
-
-    int i;
-    while (1) {
-        for (i = 0; i < total_cycles; i++){
-           pos_direction ? (duty += step) : (duty -= step); 
-
-           ledc_set_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0, duty);
-           ledc_update_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0);
-           vTaskDelay(iteration_time/ portTICK_PERIOD_MS);
-        }
-
-        pos_direction = !pos_direction;
+    //vTaskDelay(pdTICKS_TO_MS(1000));
+    //uart_comm_send_string("HELP");
+    xPIRSem = xSemaphoreCreateBinary();
+    if( xPIRSem != NULL ){
+       // The semaphore was created successfully.
+       // The semaphore can now be used.
+       printf("Sema made\n");
     }
-           vTaskDelay(pdMS_TO_TICKS(50));
+    assert(xPIRSem);
+    gpio_install_isr_service(0);
+    ESP_LOGI(TAG,"configuring PIR sensor\n");
+    printf("configuration done\n");
+    gpio_reset_pin(PIR_PIN);
+    gpio_set_direction(PIR_PIN, GPIO_MODE_INPUT); //PIR Sensor will input a signal
+    gpio_pullup_en(PIR_PIN);
+    gpio_set_intr_type(PIR_PIN, GPIO_INTR_POSEDGE);
+    printf("we are getting stuck\n");
+    gpio_isr_handler_add(PIR_PIN, PIR_ISR, NULL);
+    printf("we made it here\n");
 
-}
+    //uart_comm_init(); //initalize UART
 
-void pirGo_task (void *parameters) {
-    gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << 4),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE
-    };
-    gpio_config(&io_conf); 
-    int last_state = 0;
-    while (1) {
-        int current_state = gpio_get_level(4);
-        if (current_state != last_state) { //just need to see if this value is high 
-            printf("detection activate uart\n");
-            movement = 1;
-            uart_comm_send_string("write open\r\n");
-            last_state = current_state; 
-        }
-       vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-}
-
-
-
-void clockGo_task (void *parameters){
-    ledc_timer_config_t timer_conf = {
-        .duty_resolution = LEDC_TIMER_1_BIT,
-        .freq_hz = 500, 
-        .speed_mode = LEDC_HIGH_SPEED_MODE,
-        .timer_num = LEDC_TIMER_0,
-        .clk_cfg = LEDC_AUTO_CLK
-    };
-
-    ledc_timer_config(&timer_conf);
-
-    ledc_channel_config_t ledc_conf = {
-        .channel = LEDC_CHANNEL_0,
-        .duty = 1, 
-        .gpio_num = SERVO_GPIO,
-        .intr_type = LEDC_INTR_DISABLE,
-        .speed_mode = LEDC_HIGH_SPEED_MODE,
-        .timer_sel = LEDC_TIMER_0,
-    };
-
-    ledc_channel_config(&ledc_conf);
-
-    while(1){
+    xTaskCreatePinnedToCore(ledstrip_task,"set brightness using light",4096,NULL, 2,NULL,0); //servo and stepper will be on the same core 
+    xTaskCreatePinnedToCore(read_TSL2591,"find light in darkness",4096,NULL, 2,NULL,0); //servo and stepper will be on the same core 
+    xTaskCreatePinnedToCore(servoRotate_task,"rotate the servo back a forth", 4096,NULL, 4,NULL,0); //servo and stepper will be on the same core 
+    //xTaskCreatePinnedToCore(stepper_spin_task, "rotate the steppper", 4096,NULL, 4,NULL,0); //servo and stepper will be on the same core 
+    xTaskCreatePinnedToCore(load_cell_task,"activate the load cell to read food weight, activate the stepper motors to dispense food",4096,NULL,4, NULL,1); //im putting this on core 1 because it has a task running inside of it 
+    xTaskCreatePinnedToCore(UART_task,"serial data task",4096,NULL,3,NULL,1);
         
-        printf("clock period");
-        //vTaskDelay(portMAX_DELAY);
-    }
-}
-
-
-void weightGo(void *parameters)
-{
-    bool ready = false;
-    int32_t raw = 0;
-    uint32_t samples = 15;
-
-    // Replace these after calibration
-    int32_t offset = 392966;     
-    float scale = 52.58;         
-
-    hx711_t assign = {
-        .dout = 19,
-        .pd_sck = 18,
-        .gain = HX711_GAIN_A_128
-    };
-
-    hx711_init(&assign);
-    printf("HX711 task started. DOUT=%d SCK=%d\n", 19, 18);
-
-    while (1)
-    {
-        hx711_is_ready(&assign, &ready);
-
-        if (ready) {
-            hx711_read_average(&assign, samples, &raw);
-
-            float grams = (offset - raw) / scale;
-
-            printf("Raw = %ld, Weight = %.2f g\n", (long)raw, grams);
-        } else {
-            printf("HX711 not ready\n");
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(500));
-    }
-}
-
-//make this a function
-static void uartGo(void *parameters)
-{
-    uint8_t rx_buff[128];
-    uart_comm_send_string("UART task started\r\n");
-
-    while (1) {
-        int len = uart_comm_read_bytes(rx_buff, sizeof(rx_buff) - 1, 100);
-
-        if (len > 0){
-            rx_buff[len] = '\0';
-            printf("Received: %s\n", (char*)rx_buff);
-
-            //Echo back what was recevied 
-            uart_comm_send_string("ESP32 got: ");
-            uart_comm_send_bytes(rx_buff, len);
-            uart_comm_send_string("\r\n");
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(20));
-    }
-}
-
-//make this a function 
-static void uart_txGo(void *parameters)
-{
-    while (1){
-        uart_comm_send_string("Periodic hello from ESP32\r\n");
-        vTaskDelay(pdMS_TO_TICKS(2000));
-    }
-    
-}
-
-
-void servo_open_task(void *parameters)
-{
-    for (int i = 0; i < SERVO_TOTAL_CYCLES; i++) {
-        current_duty += SERVO_STEP;
-
-        ledc_set_duty(SERVO_MODE, SERVO_CHANNEL, current_duty);
-        ledc_update_duty(SERVO_MODE, SERVO_CHANNEL);
-
-        vTaskDelay(pdMS_TO_TICKS(SERVO_DELAY_MS));
-    }
-     // Stop sending PWM so the servo is no longer forced
-    ledc_stop(SERVO_MODE, SERVO_CHANNEL, 0);
-
-    vTaskDelete(NULL);
-}
-
-void servo_close_task(void *parameters)
-{
-    for (int i = 0; i < SERVO_TOTAL_CYCLES; i++) {
-        current_duty -= SERVO_STEP;
-
-        ledc_set_duty(SERVO_MODE, SERVO_CHANNEL, current_duty);
-        ledc_update_duty(SERVO_MODE, SERVO_CHANNEL);
-
-        vTaskDelay(pdMS_TO_TICKS(SERVO_DELAY_MS));
-    }
-
-     // Stop sending PWM so the servo is no longer forced
-    ledc_stop(SERVO_MODE, SERVO_CHANNEL, 0);
-    vTaskDelete(NULL);
-}
-
-void app_main(void) {
-    //xTaskCreate(&servoGo_task, "servoTASK", 2048, NULL, 5, NULL);
-    //xTaskCreate(&clockGo_task, "CLK", 2048, NULL, 5, NULL );
-    //xTaskCreate(&loadCellGo, "load cell task", 2048, NULL, 5, NULL); 
-    //xTaskCreate(&weightGo, "weights", 2048, NULL, 5, NULL);
-        servo_init();
-
-    xTaskCreate(&pirGo_task, "PIR_TASK", 2048, NULL, 5, NULL);
-
-
-        uint8_t rx_buff[128];
-        char command[128];
-        if (uart_comm_init() != ESP_OK) {
-           printf("UART init failed\n");
-           return;
-        }else {
-                       uart_comm_send_string("ESP32 ready\r\n");
-
-        }
-
-    
-
-    while (1){
-
-        // if (movement == 1){
-        //printf("movement %d", movement);
-
-    
-        int len = uart_comm_read_string((char*)rx_buff, sizeof(rx_buff)- 1, 5000);
-        strncpy(command, (char*)rx_buff, sizeof(command) - 1);
-        command[sizeof(command)-1] = '\0';
-        printf("Received: %s\n", command);
-            
-        char open[] = "open";
-        char close[] = "close";
-        int Opencmp = strcmp (command, open);
-        if (Opencmp == 0){
-// Open servo
-    xTaskCreate(servo_open_task, "servo_open_task", 2048, NULL, 5, NULL);        }
-        int Closecmp = strcmp(command, close);
-        if (Closecmp == 0){
-// Close servo
-    xTaskCreate(servo_close_task, "servo_close_task", 2048, NULL, 5, NULL);        }
-        uart_comm_send_string("You typed: ");
-        uart_comm_send_bytes(rx_buff, len);
-        uart_comm_send_string("\r\n");
-        vTaskDelay(pdMS_TO_TICKS(500));
-        movement = 0;
-
-    //}
-}
-
 }

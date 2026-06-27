@@ -1,0 +1,8 @@
+LEDC_TIMER_1 is for the servos
+servo 1 uses LEDC_CHANNEL_0
+servo 2 usese LEDC_CHANNEL_1
+
+LEDC_TIMER_0 is for the ledstrip
+the ledstrip uses LEDC_CHANNEL_2
+
+there are 8 channels for generating pwm signals 

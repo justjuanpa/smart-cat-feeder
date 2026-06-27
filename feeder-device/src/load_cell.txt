@@ -1,0 +1,53 @@
+#include "load_cell.h"
+#include <stdio.h>
+#include <stdbool.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "driver/gpio.h"
+#include "jay_hx711.h"
+
+#define HX711_DOUT GPIO_NUM_4
+#define HX711_SCK GPIO_NUM_5 
+
+static hx711_t scale_dev;
+static volatile float current_weight_g = 0.0f;
+
+static int32_t offset = -388424;
+static float scale = -428.0f;
+
+void load_cell_init(void){
+    scale_dev.dout = HX711_DOUT;
+    scale_dev.pd_sck = HX711_SCK;
+    scale_dev.gain = HX711_GAIN_A_128;
+
+    hx711_init(&scale_dev);
+
+    printf("HX711 intialized. DOUT = %d SCK = %d\n", HX711_DOUT, HX711_SCK);
+}
+
+float load_cell_get_grams(void){
+    return current_weight_g;
+}
+
+void load_cell_task(void *parameters){
+    bool ready = false;
+    int32_t raw = 0;
+    uint32_t samples = 15;
+
+    while (1) {
+        hx711_is_ready(&scale_dev, &ready);
+
+        if (ready) {
+            hx711_read_average(&scale_dev, samples, &raw);
+
+            current_weight_g = (offset - raw) / scale;
+
+            printf("Raw = %ld, Weight = %.2f g\n", (long)raw, current_weight_g);
+        }
+        else {
+            printf("HX711 not ready\n");
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}

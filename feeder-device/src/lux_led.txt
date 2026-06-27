@@ -1,0 +1,24 @@
+alright the lux to led is the main focus for right now 
+
+the main ideas is the to make it far more power efficent such that it 
+will not burn power (or the 5V reg)
+
+to this I want to use a timer when the task (or timer) reaches 
+10 mintues unless the pir sensor is high the the led will go low 
+
+on the flip if the pir sensor goes high I want the led to turn using the current lux value
+now the issue is that means a lot of the system depends on the pir sensor is that a good idea?
+guess we can find 
+
+the light should still be able to vary within the 10 mintues btw 
+
+so flow is:
+
+pir -> lux sensor -> start 10 mintue timer (maybe the user can set this value?) -> led pwm output
+-> turn off after the user set time or 10 mintues 
+
+this should ensure the system does have to deal with massive amounts of current flow
+
+actually rather than 10 maybe 5 mintues
+
+as for timer idea maybe user how long the task has been running for or use a timer interrupt eel4742 style 

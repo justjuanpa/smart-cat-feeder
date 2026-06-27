@@ -23,3 +23,5 @@ esp_err_t hx711_wait(hx711_t *dev, uint32_t timeout_ms);
 esp_err_t hx711_set_gain(hx711_t *dev, hx711_gain_t gain);
 esp_err_t hx711_read_data(hx711_t *dev, int32_t *data);
 esp_err_t hx711_read_average(hx711_t *dev, uint32_t times, int32_t *data);
+void load_cell_task(void *parameters);
+void load_cell_task_en(bool val);

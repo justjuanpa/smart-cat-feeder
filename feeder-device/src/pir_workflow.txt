@@ -1,0 +1,33 @@
+the pir sensor will be an interrupt (the code for this has been made already)
+once the interrupt is triggered a singal will go to the pi via uart 
+once uart singal goes through if a match is determend create and use the servo spin task and the stepper tasks
+if a match is not determend the feeder will do nothing and will not open
+
+if this section a few things need to work together 
+- the pir sensor - the brains of the operator without this nothing can happen
+    - this was made as an interrupt because polling consumes cpu time 
+- the servo(s) - the servo allows for the feeder to open the cover to feed the pet
+    - when a match is determend the servo will rotate 90 degrees
+- the steppper - this allows for the food to actual get dispensed 
+- uart comm - this is very important; if comms fail the feeder could not dispense for 
+a hungry pet or open for the wrong one which is bad 
+    - UART comms needs to do many things:
+        - if a match is determined send comms to esp32 that it is okay to open the servo/spin the stepper
+        - if a match is not determined send comms to esp32 that it is not okay to open servo/spin the stepper
+        - if a match detected send comms to esp32 on whether to open the left or right feeder
+            - this last one is crucial if the pi determines that the pet that is assigned to the right of the 
+            feeder is present the pi has to send a uart comm to the esp32 to only open that feeder cover with the servo and spin the proper stepper
+            to feed the right pet 
+- load cell; the load happens right after the stepper spins; the user of the feeder will insert an amount (in grams)
+that the feeder will dispense to; ex. user sets food amount to 25grams; the stepper will spin till the load cell hits that 25 grams 
+once the load cell hits the right amount of food the stepper will spin backwards (to self clean and get rid of any extra food),
+the servo will rotate 90 degress backwards so that the cover can close; this will happen regardless if the pir sensor detects a heat differental
+
+okay my thinking the last part of the load cell section is wrong at least up until the stepper step; after the stepper rotates backwards
+the cover should not close right away; the cover should only close if the pet is not detected (this is the tricky part about this)
+the load cell can probably work for this step; if the food is still there within the user set feed time frame the cover will open for the pet 
+if the food is gone (ie. the load cell read zero grams) than the feeder will not open until a new amount of food is dispensed
+
+this flow makes sense but more needs to happen
+we need to add how often the pets gets feed
+- if the pet triggers the pir sensor constant but it is not ready to open for maybe 4 hours it should not open

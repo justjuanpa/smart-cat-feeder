@@ -6,6 +6,15 @@
 # idf_component_register(SRCS ${app_sources})
 
 idf_component_register(
-    SRCS "main.c" "wifi_sta.c" "jay_hx711.c" "uart_comm.c"
+    SRCS 
+    "main.c" 
+    "jay_hx711.c" 
+    "uart_comm.c" 
+    "wifi_sta.c" 
+    "web_server.c"
+    "feeder_control.c"
+    "servo.c"
+    "stepper.c"
+    "ledstrip.c"
     INCLUDE_DIRS "../include"
 )

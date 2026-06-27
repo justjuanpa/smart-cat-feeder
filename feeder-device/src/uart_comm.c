@@ -129,3 +129,14 @@ int uart_comm_read_string(char *str, size_t max_len, uint32_t timeout_ms)
     str[bytes_read] = '\0';
     return bytes_read;
 }
+
+void trim_command(char *command){
+    size_t len = strlen(command);
+    while(len > 0){
+        char current = command[len - 1];
+        if (current != '\r' && current != '\n' && current != ' ' && current != '\t'){
+            break;
+        }
+        command[--len] = '\0';
+    }
+}

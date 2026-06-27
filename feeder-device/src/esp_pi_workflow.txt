@@ -1,0 +1,72 @@
+pir intr goes high triggers uart signal to go to the pi and activate the camera 
+once this happens if the pi goes returns you it can do a few things:
+    - if a match is determined for the pet of the right side activate the servo, the stepper, and the load cell on the right side
+    - if a match is determined for the pet assigned to the left side activate the servo, the stepper, and the load cell on the left side 
+    - do nothing because a match wasnt detected 
+regardless of what happens the task should be created at the begining of the program 
+the should wait for a signal 
+maybe the load cell file and the servo c files can take an input left or right 
+and open the right (rather correct) dispenser accordingly 
+so maybe with the pir i can do some uart stuff
+
+maybe something like this, expect with an interrupt of course:
+void pirGo_task (void *parameters) {
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << PIR_GPIO),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+    gpio_config(&io_conf); 
+    int last_state = gpio_get_level(PIR_GPIO);
+
+    while (1) {
+        int current_state = gpio_get_level(PIR_GPIO);
+
+        if (current_state == 1 && last_state == 0 && !awaiting_pi_decision && !motor_busy) {
+            printf("Trigger detected, notifying vision pipeline\n");
+            uart_comm_send_string("TRIGGER\r\n");
+            awaiting_pi_decision = true;
+        }
+
+        last_state = current_state;
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+}
+
+as for the main
+void app_main(void)
+{
+    xPIRSem = xSemaphoreCreateBinary(); //create semaphore
+    assert(xPIRSem);
+    gpio_install_isr_service(0);
+    gpio_set_direction(PIR_PIN, GPIO_MODE_INPUT);
+    gpio_pullup_en(PIR_PIN);
+    gpio_set_intr_type(PIR_PIN, GPIO_INTR_POSEDGE);
+    gpio_isr_handler_add(PIR_PIN, PIR_ISR, NULL);
+
+    maybe a function can do the previous part pir_init();
+
+    make the needed task as the beginner
+    xTaskCreatePinnedToCore(ledstrip_task, "set brightness using light", 4096,NULL, 5,NULL,0); //servo and stepper will be on the same core 
+    xTaskCreatePinnedToCore(read_TSL2591, "find light in darkness", 4096,NULL, 5,NULL,0); //servo and stepper will be on the same core 
+    xTaskCreatePinnedToCore(servoRotate_task, "rotate the servo back a forth", 4096,NULL, 5,NULL,0); //servo and stepper will be on the same core 
+    xTaskCreatePinnedToCore(stepper_spin_task, "rotate the steppper", 4096,NULL, 4,NULL,0); //servo and stepper will be on the same core 
+    xTaskCreatePinnedToCore(load_cell_task, 
+        "activate the load cell to read food weight, activate the stepper motors to dispense food"
+        , 4096, NULL, 4, NULL,1); //im putting this on core 1 because it has a task running inside of it 
+}
+
+//so the isr has to be short 
+//as soon as the pir detects motion send a signal to the pi
+//and get out of the isr not to block the system 
+//the pir is our button in this case 
+
+//so maybe the uart function can be an isr that detects serail data?
+//for example 
+//as soon as the pi sends something back another isr can trigger
+//this isr would wait for 
+regardless if this ends being an isr or not it should still follow this flow
+//open right, open left, do nothing cause no match
+//i want the data in real time so lets make it work in real time

@@ -1,20 +1,76 @@
 import { MaterialIcons } from '@expo/vector-icons';
-import type { PropsWithChildren } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useState, type PropsWithChildren } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-const schedule = [
-  { time: '8:00 AM', label: 'Breakfast', portion: 'Milo 22 g / Mimi 18 g' },
-  { time: '6:30 PM', label: 'Dinner', portion: 'Milo 24 g / Mimi 20 g' },
-];
-
-const setupItems = [
-  { title: 'Backend API', detail: 'Waiting for endpoint connection', done: false },
-  { title: 'Raspberry Pi camera', detail: 'YOLO pet detection script exists', done: true },
-  { title: 'Feeder controller', detail: 'UART and load-cell firmware in progress', done: true },
-];
+import { useSupabaseSession } from '@/hooks/use-supabase-session';
+import {
+  createDemoPetsAndSchedules,
+  ensureProfile,
+  fetchPets,
+  fetchSchedules,
+  type FeedingScheduleRow,
+  type PetRow,
+} from '@/utils/paws-data';
+import { supabase } from '@/utils/supabase';
 
 export default function ManageScreen() {
+  const { session } = useSupabaseSession();
+  const [pets, setPets] = useState<PetRow[]>([]);
+  const [schedules, setSchedules] = useState<FeedingScheduleRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [savingDemo, setSavingDemo] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadManageData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const [nextPets, nextSchedules] = await Promise.all([fetchPets(), fetchSchedules()]);
+      setPets(nextPets);
+      setSchedules(nextSchedules);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Unable to load feeder settings.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!session?.user) {
+      return;
+    }
+
+    ensureProfile(session.user.id, session.user.email)
+      .then(loadManageData)
+      .catch((profileError: Error) => setError(profileError.message));
+  }, [loadManageData, session?.user]);
+
+  async function createDemoData() {
+    if (!session?.user) {
+      return;
+    }
+
+    setSavingDemo(true);
+
+    try {
+      await createDemoPetsAndSchedules(session.user.id);
+      await loadManageData();
+    } catch (demoError) {
+      Alert.alert(
+        'Could not create demo data',
+        demoError instanceof Error ? demoError.message : 'Try again in a moment.',
+      );
+    } finally {
+      setSavingDemo(false);
+    }
+  }
+
+  async function signOut() {
+    await supabase.auth.signOut();
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container}>
@@ -23,24 +79,49 @@ export default function ManageScreen() {
             <TextMuted>Controls</TextMuted>
             <TextTitle>Manage feeder</TextTitle>
           </View>
-          <Pressable style={styles.iconButton}>
-            <MaterialIcons name="settings" size={24} color="#172121" />
+          <Pressable onPress={signOut} style={styles.iconButton}>
+            <MaterialIcons name="logout" size={24} color="#172121" />
           </Pressable>
         </View>
+
+        {error ? (
+          <View style={styles.errorPanel}>
+            <TextCardTitle>Backend error</TextCardTitle>
+            <TextMuted>{error}</TextMuted>
+          </View>
+        ) : null}
 
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <View>
               <TextSection>Pet profiles</TextSection>
-              <TextMuted>Recognition and portion rules</TextMuted>
+              <TextMuted>Recognition thresholds and portion rules</TextMuted>
             </View>
-            <Pressable style={styles.addButton}>
+            <Pressable
+              disabled={savingDemo}
+              onPress={createDemoData}
+              style={[styles.addButton, savingDemo && styles.disabledButton]}>
               <MaterialIcons name="add" size={20} color="#FFFFFF" />
             </Pressable>
           </View>
 
-          <ProfileRow name="Milo" tag="Orange tabby" meal="46 g/day" confidence="92%" />
-          <ProfileRow name="Mimi" tag="Tuxedo" meal="38 g/day" confidence="95%" />
+          {pets.length === 0 ? (
+            <TextMuted>
+              {loading
+                ? 'Loading pets...'
+                : 'No pets yet. Press + to create Milo, Mimi, and their schedules in Supabase.'}
+            </TextMuted>
+          ) : (
+            pets.map((pet) => (
+              <ProfileRow
+                key={pet.id}
+                confidence={`${Math.round(pet.recognition_threshold * 100)}%`}
+                meal={`${formatGrams(pet.daily_gram_limit)}/day`}
+                name={pet.name}
+                tag={pet.breed ?? pet.species}
+              />
+            ))
+          )}
         </View>
 
         <View style={styles.card}>
@@ -49,46 +130,39 @@ export default function ManageScreen() {
               <TextSection>Meal schedule</TextSection>
               <TextMuted>Automatic dispensing windows</TextMuted>
             </View>
-            <Pressable style={styles.textButton}>
-              <TextButton>Edit</TextButton>
+            <Pressable onPress={loadManageData} style={styles.textButton}>
+              <TextButton>{loading ? 'Loading' : 'Refresh'}</TextButton>
             </Pressable>
           </View>
 
-          {schedule.map((meal) => (
-            <View key={meal.time} style={styles.scheduleRow}>
-              <View style={styles.timePill}>
-                <TextTime>{meal.time}</TextTime>
+          {schedules.length === 0 ? (
+            <TextMuted>No schedules yet. Create demo data to store real schedule rows.</TextMuted>
+          ) : (
+            schedules.map((meal) => (
+              <View key={meal.id} style={styles.scheduleRow}>
+                <View style={styles.timePill}>
+                  <TextTime>{formatScheduleTime(meal.scheduled_time)}</TextTime>
+                </View>
+                <View style={styles.rowText}>
+                  <TextCardTitle>{meal.meal_name}</TextCardTitle>
+                  <TextMuted>
+                    {meal.pets?.name ?? 'Pet'} {formatGrams(meal.portion_grams)}
+                  </TextMuted>
+                </View>
               </View>
-              <View style={styles.rowText}>
-                <TextCardTitle>{meal.label}</TextCardTitle>
-                <TextMuted>{meal.portion}</TextMuted>
-              </View>
-            </View>
-          ))}
+            ))
+          )}
         </View>
 
         <View style={styles.card}>
           <TextSection>System readiness</TextSection>
           <TextMuted style={styles.readinessCopy}>
-            These checkpoints line up the mobile app with the backend, camera model, and feeder
-            device.
+            The backend and mobile app are connected now. Raspberry Pi ingestion is the next piece.
           </TextMuted>
 
-          {setupItems.map((item) => (
-            <View key={item.title} style={styles.setupRow}>
-              <View style={[styles.statusIcon, item.done ? styles.doneIcon : styles.pendingIcon]}>
-                <MaterialIcons
-                  name={item.done ? 'check' : 'sync'}
-                  size={18}
-                  color={item.done ? '#166534' : '#92400E'}
-                />
-              </View>
-              <View style={styles.rowText}>
-                <TextCardTitle>{item.title}</TextCardTitle>
-                <TextMuted>{item.detail}</TextMuted>
-              </View>
-            </View>
-          ))}
+          <SetupRow done title="Supabase schema" detail="Tables and RLS are live" />
+          <SetupRow done title="Mobile app backend" detail="Auth, pets, schedules, and manual logs connected" />
+          <SetupRow done={false} title="Raspberry Pi ingestion" detail="Edge Function/device token not built yet" />
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -117,10 +191,43 @@ function ProfileRow({
       </View>
       <View style={styles.profileMeta}>
         <TextAmount>{meal}</TextAmount>
-        <TextSmall>{confidence} match</TextSmall>
+        <TextSmall>{confidence} threshold</TextSmall>
       </View>
     </View>
   );
+}
+
+function SetupRow({ title, detail, done }: { title: string; detail: string; done: boolean }) {
+  return (
+    <View style={styles.setupRow}>
+      <View style={[styles.statusIcon, done ? styles.doneIcon : styles.pendingIcon]}>
+        <MaterialIcons
+          name={done ? 'check' : 'sync'}
+          size={18}
+          color={done ? '#166534' : '#92400E'}
+        />
+      </View>
+      <View style={styles.rowText}>
+        <TextCardTitle>{title}</TextCardTitle>
+        <TextMuted>{detail}</TextMuted>
+      </View>
+    </View>
+  );
+}
+
+function formatGrams(value: number) {
+  return `${Number(value).toFixed(0)} g`;
+}
+
+function formatScheduleTime(value: string) {
+  const [hours, minutes] = value.split(':');
+  const date = new Date();
+  date.setHours(Number(hours), Number(minutes), 0, 0);
+
+  return new Intl.DateTimeFormat(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date);
 }
 
 function TextTitle(props: PropsWithChildren) {
@@ -201,6 +308,7 @@ const styles = StyleSheet.create({
   cardHeader: {
     alignItems: 'center',
     flexDirection: 'row',
+    gap: 12,
     justifyContent: 'space-between',
   },
   sectionTitle: {
@@ -215,6 +323,9 @@ const styles = StyleSheet.create({
     height: 40,
     justifyContent: 'center',
     width: 40,
+  },
+  disabledButton: {
+    opacity: 0.7,
   },
   textButton: {
     padding: 6,
@@ -291,6 +402,14 @@ const styles = StyleSheet.create({
   },
   pendingIcon: {
     backgroundColor: '#FEF3C7',
+  },
+  errorPanel: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FCA5A5',
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 4,
+    padding: 14,
   },
   cardTitle: {
     color: '#172121',

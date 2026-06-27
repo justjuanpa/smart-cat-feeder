@@ -1,47 +1,81 @@
 import { MaterialIcons } from '@expo/vector-icons';
-import type { PropsWithChildren } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View, type StyleProp, type TextStyle } from 'react-native';
+import { useCallback, useEffect, useState, type PropsWithChildren } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View, type StyleProp, type TextStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-type Pet = {
-  id: string;
-  name: string;
-  portion: string;
-  status: string;
-  color: string;
-};
+import { useSupabaseSession } from '@/hooks/use-supabase-session';
+import {
+  fetchFeedingEvents,
+  fetchPets,
+  logManualFeedingEvent,
+  type FeedingEventRow,
+  type PetRow,
+} from '@/utils/paws-data';
 
-type FeedingEvent = {
-  id: string;
-  pet: string;
-  time: string;
-  amount: string;
-  note: string;
-};
-
-const pets: Pet[] = [
-  { id: 'milo', name: 'Milo', portion: '46 g', status: 'Next meal 6:30 PM', color: '#D97706' },
-  { id: 'mimi', name: 'Mimi', portion: '38 g', status: 'Ate 2h ago', color: '#0F766E' },
-];
-
-const feedingEvents: FeedingEvent[] = [
-  { id: '1', pet: 'Mimi', time: '2:14 PM', amount: '36 g', note: 'Recognized by camera' },
-  { id: '2', pet: 'Milo', time: '8:05 AM', amount: '44 g', note: 'Bowl weight confirmed' },
-  { id: '3', pet: 'Unknown pet', time: '7:58 AM', amount: '0 g', note: 'Access held for review' },
-];
+const petColors = ['#D97706', '#0F766E', '#155E75', '#7C3AED'];
 
 export default function DashboardScreen() {
+  const { session } = useSupabaseSession();
+  const [pets, setPets] = useState<PetRow[]>([]);
+  const [feedingEvents, setFeedingEvents] = useState<FeedingEventRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [savingEvent, setSavingEvent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadDashboard = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const [nextPets, nextEvents] = await Promise.all([fetchPets(), fetchFeedingEvents()]);
+      setPets(nextPets);
+      setFeedingEvents(nextEvents);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Unable to load dashboard data.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDashboard();
+  }, [loadDashboard]);
+
+  async function logDemoEvent() {
+    if (!session?.user || pets.length === 0) {
+      Alert.alert('No pet yet', 'Create demo pets on the Manage tab first.');
+      return;
+    }
+
+    setSavingEvent(true);
+
+    try {
+      await logManualFeedingEvent(session.user.id, pets[0]);
+      await loadDashboard();
+    } catch (eventError) {
+      Alert.alert(
+        'Could not log event',
+        eventError instanceof Error ? eventError.message : 'Try again in a moment.',
+      );
+    } finally {
+      setSavingEvent(false);
+    }
+  }
+
+  const latestEvent = feedingEvents[0];
+  const title = pets.length > 0 ? pets.map((pet) => pet.name).join(' & ') : 'PAWS Feeder';
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.header}>
           <View>
             <TextMuted>Smart Feeder</TextMuted>
-            <TextTitle>Milo & Mimi</TextTitle>
+            <TextTitle>{title}</TextTitle>
           </View>
           <View style={styles.onlineBadge}>
             <View style={styles.onlineDot} />
-            <TextSmall style={styles.onlineText}>Online</TextSmall>
+            <TextSmall style={styles.onlineText}>Backend live</TextSmall>
           </View>
         </View>
 
@@ -50,72 +84,130 @@ export default function DashboardScreen() {
             <MaterialIcons name="camera-alt" size={28} color="#0F766E" />
           </View>
           <TextMuted>Camera guard</TextMuted>
-          <TextHero>Last detection: Mimi</TextHero>
+          <TextHero>
+            {latestEvent?.recognition_label
+              ? `Last event: ${latestEvent.recognition_label}`
+              : 'Waiting for first event'}
+          </TextHero>
           <TextBody style={styles.heroCopy}>
-            Feeder door stayed unlocked for the assigned portion and closed after the bowl weight
-            stabilized.
+            {latestEvent
+              ? eventSummary(latestEvent)
+              : 'The Raspberry Pi will log automatic recognition and feeding events here once it is connected.'}
           </TextBody>
           <View style={styles.metricRow}>
-            <Metric label="Food left" value="72%" />
-            <Metric label="Bowl" value="Clear" />
-            <Metric label="Battery" value="Plugged" />
+            <Metric label="Pets" value={String(pets.length)} />
+            <Metric label="Events" value={String(feedingEvents.length)} />
+            <Metric label="Device" value="Pending" />
           </View>
         </View>
 
+        {error ? (
+          <View style={styles.errorPanel}>
+            <TextCardTitle>Backend error</TextCardTitle>
+            <TextMuted>{error}</TextMuted>
+          </View>
+        ) : null}
+
         <View style={styles.sectionHeader}>
           <TextSection>Today&apos;s portions</TextSection>
-          <Pressable style={styles.textButton}>
-            <TextButton>Adjust</TextButton>
+          <Pressable onPress={loadDashboard} style={styles.textButton}>
+            <TextButton>{loading ? 'Loading' : 'Refresh'}</TextButton>
           </Pressable>
         </View>
 
-        <View style={styles.petGrid}>
-          {pets.map((pet) => (
-            <View key={pet.id} style={styles.petCard}>
-              <View style={[styles.petAvatar, { backgroundColor: pet.color }]}>
-                <TextInitial>{pet.name[0]}</TextInitial>
+        {pets.length === 0 ? (
+          <EmptyState text="No pets yet. Use the Manage tab to add demo pets from Supabase." />
+        ) : (
+          <View style={styles.petGrid}>
+            {pets.map((pet, index) => (
+              <View key={pet.id} style={styles.petCard}>
+                <View style={[styles.petAvatar, { backgroundColor: petColors[index % petColors.length] }]}>
+                  <TextInitial>{pet.name[0]}</TextInitial>
+                </View>
+                <TextCardTitle>{pet.name}</TextCardTitle>
+                <TextMuted>{pet.breed ?? pet.species}</TextMuted>
+                <View style={styles.portionRow}>
+                  <TextAmount>{formatGrams(pet.daily_gram_limit)}</TextAmount>
+                  <TextSmall>daily target</TextSmall>
+                </View>
               </View>
-              <TextCardTitle>{pet.name}</TextCardTitle>
-              <TextMuted>{pet.status}</TextMuted>
-              <View style={styles.portionRow}>
-                <TextAmount>{pet.portion}</TextAmount>
-                <TextSmall>daily target</TextSmall>
-              </View>
-            </View>
-          ))}
-        </View>
+            ))}
+          </View>
+        )}
 
         <View style={styles.sectionHeader}>
           <TextSection>Recent activity</TextSection>
-          <Pressable style={styles.textButton}>
+          <Pressable onPress={loadDashboard} style={styles.textButton}>
             <TextButton>See all</TextButton>
           </Pressable>
         </View>
 
-        <View style={styles.activityList}>
-          {feedingEvents.map((event) => (
-            <View key={event.id} style={styles.activityItem}>
-              <View style={styles.activityIcon}>
-                <MaterialIcons name="restaurant" size={20} color="#155E75" />
+        {feedingEvents.length === 0 ? (
+          <EmptyState text="No feeding events yet. Log a demo event, then the Pi will take over later." />
+        ) : (
+          <View style={styles.activityList}>
+            {feedingEvents.map((event) => (
+              <View key={event.id} style={styles.activityItem}>
+                <View style={styles.activityIcon}>
+                  <MaterialIcons name="restaurant" size={20} color="#155E75" />
+                </View>
+                <View style={styles.activityText}>
+                  <TextCardTitle>{event.pets?.name ?? event.recognition_label ?? 'Unknown pet'}</TextCardTitle>
+                  <TextMuted>{eventSummary(event)}</TextMuted>
+                </View>
+                <View style={styles.activityMeta}>
+                  <TextSmall>{formatTime(event.occurred_at)}</TextSmall>
+                  <TextAmountSmall>{formatGrams(event.amount_grams)}</TextAmountSmall>
+                </View>
               </View>
-              <View style={styles.activityText}>
-                <TextCardTitle>{event.pet}</TextCardTitle>
-                <TextMuted>{event.note}</TextMuted>
-              </View>
-              <View style={styles.activityMeta}>
-                <TextSmall>{event.time}</TextSmall>
-                <TextAmountSmall>{event.amount}</TextAmountSmall>
-              </View>
-            </View>
-          ))}
-        </View>
+            ))}
+          </View>
+        )}
 
-        <Pressable style={styles.primaryButton}>
+        <Pressable
+          disabled={savingEvent}
+          onPress={logDemoEvent}
+          style={[styles.primaryButton, savingEvent && styles.disabledButton]}>
           <MaterialIcons name="play-arrow" size={24} color="#FFFFFF" />
-          <TextPrimaryButton>Dispense test portion</TextPrimaryButton>
+          <TextPrimaryButton>{savingEvent ? 'Logging...' : 'Log demo feeding event'}</TextPrimaryButton>
         </Pressable>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function eventSummary(event: FeedingEventRow) {
+  if (event.notes) {
+    return event.notes;
+  }
+
+  if (event.event_type === 'manual') {
+    return 'Manual event from the mobile app.';
+  }
+
+  return `${event.event_type} event${event.authorized === false ? ': access denied' : ''}.`;
+}
+
+function formatGrams(value: number | null) {
+  if (value == null) {
+    return '0 g';
+  }
+
+  return `${Number(value).toFixed(0)} g`;
+}
+
+function formatTime(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(value));
+}
+
+function EmptyState({ text }: { text: string }) {
+  return (
+    <View style={styles.emptyState}>
+      <TextMuted>{text}</TextMuted>
+    </View>
   );
 }
 
@@ -200,6 +292,7 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     flexDirection: 'row',
+    gap: 12,
     justifyContent: 'space-between',
   },
   title: {
@@ -291,12 +384,14 @@ const styles = StyleSheet.create({
   },
   petGrid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 12,
   },
   petCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 8,
-    flex: 1,
+    flexBasis: '47%',
+    flexGrow: 1,
     gap: 8,
     padding: 14,
   },
@@ -356,10 +451,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 16,
   },
+  disabledButton: {
+    opacity: 0.7,
+  },
   primaryButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '800',
+  },
+  errorPanel: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FCA5A5',
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 4,
+    padding: 14,
+  },
+  emptyState: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    padding: 16,
   },
   cardTitle: {
     color: '#172121',

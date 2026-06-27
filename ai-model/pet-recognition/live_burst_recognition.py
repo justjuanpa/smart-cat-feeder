@@ -15,7 +15,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 AI_MODEL_DIR = SCRIPT_DIR.parent
 
 MODEL_DIR = AI_MODEL_DIR / "yolov8n_ncnn_model"
-PROFILE_PATH = SCRIPT_DIR / "pet_profiles_phone_sim.npz"
+PROFILE_PATH = SCRIPT_DIR / "pet_profiles_phone_sim_crops.npz"
 DEBUG_DIR = SCRIPT_DIR / "live_burst_debug"
 DEBUG_FRAME_DIR = DEBUG_DIR / "frames"
 DEBUG_CROP_DIR = DEBUG_DIR / "crops"
@@ -27,7 +27,7 @@ YOLO_CONFIDENCE_THRESHOLD = 0.25
 PADDING_RATIO = 0.20
 
 SIMILARITY_THRESHOLD = 0.70
-MARGIN_THRESHOLD = 0.08
+MARGIN_THRESHOLD = 0.05
 MIN_ACCEPTED_FRAMES = 2
 
 SAVE_DEBUG_CROPS = True

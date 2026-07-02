@@ -8,7 +8,7 @@ void open_cover();
 void close_cover(); 
 void servo_init();
 void servoRotate_task(void *parameters);
-void servoEnable(bool val);
+void servoEnableLeft(bool val);
+void servoEnableRight(bool val);
 
-
-#endif SERVO_H
+#endif // SERVO_H

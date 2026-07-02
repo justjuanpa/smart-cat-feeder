@@ -23,7 +23,8 @@ void stepper_spin_task(void *parameters); //spin the servo forward
 void stepper_stop_task(void *parameters); //spin the servo backwards for cleanning 
 void stepper_spin_stop(bool val);
 void stepper_task(void *para);
-void stepper_enable(bool val);
+void stepperEnableLeft(bool val);
+void stepperEnableRight(bool val);
 //and to get rid of extra food 
 
-#endif STEPPER_H
+#endif // STEPPER_H

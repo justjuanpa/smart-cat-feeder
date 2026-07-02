@@ -34,6 +34,23 @@ export type FeedingEventRow = {
   pets?: Pick<PetRow, 'name'> | null;
 };
 
+export type DeviceStatusRow = {
+  device_id: string;
+  owner_id: string;
+  online: boolean;
+  current_weight_grams: number | null;
+  last_motion_at: string | null;
+  last_event_at: string | null;
+  firmware_version: string | null;
+  vision_version: string | null;
+  updated_at: string;
+  devices?: {
+    name: string;
+    status: string;
+    last_seen_at: string | null;
+  } | null;
+};
+
 type DemoScheduleRow = {
   owner_id: string;
   pet_id: string;
@@ -43,9 +60,25 @@ type DemoScheduleRow = {
 };
 
 type RelatedPet = Pick<PetRow, 'name'> | Pick<PetRow, 'name'>[] | null;
+type RelatedDevice =
+  | {
+      name: string;
+      status: string;
+      last_seen_at: string | null;
+    }
+  | {
+      name: string;
+      status: string;
+      last_seen_at: string | null;
+    }[]
+  | null;
 
 function normalizeRelatedPet(pet: RelatedPet) {
   return Array.isArray(pet) ? (pet[0] ?? null) : pet;
+}
+
+function normalizeRelatedDevice(device: RelatedDevice) {
+  return Array.isArray(device) ? (device[0] ?? null) : device;
 }
 
 export async function ensureProfile(userId: string, displayName?: string | null) {
@@ -107,6 +140,31 @@ export async function fetchFeedingEvents() {
     ...event,
     pets: normalizeRelatedPet(event.pets),
   })) as FeedingEventRow[];
+}
+
+export async function fetchLatestDeviceStatus() {
+  const { data, error } = await supabase
+    .from('device_status')
+    .select(
+      'device_id, owner_id, online, current_weight_grams, last_motion_at, last_event_at, firmware_version, vision_version, updated_at, devices(name, status, last_seen_at)',
+    )
+    .order('updated_at', { ascending: false })
+    .limit(1);
+
+  if (error) {
+    throw error;
+  }
+
+  const status = data?.[0];
+
+  if (!status) {
+    return null;
+  }
+
+  return {
+    ...status,
+    devices: normalizeRelatedDevice(status.devices),
+  } as DeviceStatusRow;
 }
 
 export async function createDemoPetsAndSchedules(userId: string) {

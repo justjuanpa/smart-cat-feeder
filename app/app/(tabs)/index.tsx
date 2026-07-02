@@ -5,9 +5,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useSupabaseSession } from '@/hooks/use-supabase-session';
 import {
+  fetchLatestDeviceStatus,
   fetchFeedingEvents,
   fetchPets,
   logManualFeedingEvent,
+  type DeviceStatusRow,
   type FeedingEventRow,
   type PetRow,
 } from '@/utils/paws-data';
@@ -15,9 +17,10 @@ import {
 const petColors = ['#D97706', '#0F766E', '#155E75', '#7C3AED'];
 
 export default function DashboardScreen() {
-  const { session } = useSupabaseSession();
+  const { session, loading: sessionLoading } = useSupabaseSession();
   const [pets, setPets] = useState<PetRow[]>([]);
   const [feedingEvents, setFeedingEvents] = useState<FeedingEventRow[]>([]);
+  const [deviceStatus, setDeviceStatus] = useState<DeviceStatusRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [savingEvent, setSavingEvent] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,9 +30,14 @@ export default function DashboardScreen() {
     setError(null);
 
     try {
-      const [nextPets, nextEvents] = await Promise.all([fetchPets(), fetchFeedingEvents()]);
+      const [nextPets, nextEvents, nextDeviceStatus] = await Promise.all([
+        fetchPets(),
+        fetchFeedingEvents(),
+        fetchLatestDeviceStatus(),
+      ]);
       setPets(nextPets);
       setFeedingEvents(nextEvents);
+      setDeviceStatus(nextDeviceStatus);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load dashboard data.');
     } finally {
@@ -38,8 +46,17 @@ export default function DashboardScreen() {
   }, []);
 
   useEffect(() => {
+    if (sessionLoading) {
+      return;
+    }
+
+    if (!session?.user) {
+      setLoading(false);
+      return;
+    }
+
     loadDashboard();
-  }, [loadDashboard]);
+  }, [loadDashboard, session?.user, sessionLoading]);
 
   async function logDemoEvent() {
     if (!session?.user || pets.length === 0) {
@@ -64,6 +81,7 @@ export default function DashboardScreen() {
 
   const latestEvent = feedingEvents[0];
   const title = pets.length > 0 ? pets.map((pet) => pet.name).join(' & ') : 'PAWS Feeder';
+  const deviceLabel = formatDeviceLabel(deviceStatus);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -97,7 +115,7 @@ export default function DashboardScreen() {
           <View style={styles.metricRow}>
             <Metric label="Pets" value={String(pets.length)} />
             <Metric label="Events" value={String(feedingEvents.length)} />
-            <Metric label="Device" value="Pending" />
+            <Metric label="Device" value={deviceLabel.metric} />
           </View>
         </View>
 
@@ -133,6 +151,38 @@ export default function DashboardScreen() {
               </View>
             ))}
           </View>
+        )}
+
+        <View style={styles.sectionHeader}>
+          <TextSection>Device status</TextSection>
+          <Pressable onPress={loadDashboard} style={styles.textButton}>
+            <TextButton>Refresh</TextButton>
+          </Pressable>
+        </View>
+
+        {deviceStatus ? (
+          <View style={styles.deviceCard}>
+            <View style={styles.deviceCardHeader}>
+              <View style={styles.deviceIcon}>
+                <MaterialIcons name="memory" size={22} color="#0F766E" />
+              </View>
+              <View style={styles.activityText}>
+                <TextCardTitle>{deviceStatus.devices?.name ?? 'PAWS Feeder'}</TextCardTitle>
+                <TextMuted>{deviceLabel.description}</TextMuted>
+              </View>
+              <View style={[styles.statusPill, deviceStatus.online ? styles.onlinePill : styles.offlinePill]}>
+                <TextSmall style={deviceStatus.online ? styles.onlinePillText : styles.offlinePillText}>
+                  {deviceStatus.online ? 'Online' : 'Offline'}
+                </TextSmall>
+              </View>
+            </View>
+            <View style={styles.deviceMetricRow}>
+              <Metric label="Bowl weight" value={formatGrams(deviceStatus.current_weight_grams)} />
+              <Metric label="Motion" value={formatRelativeTime(deviceStatus.last_motion_at)} />
+            </View>
+          </View>
+        ) : (
+          <EmptyState text="No device status yet. Once the Raspberry Pi starts sending heartbeats, this card will show feeder health." />
         )}
 
         <View style={styles.sectionHeader}>
@@ -176,6 +226,22 @@ export default function DashboardScreen() {
   );
 }
 
+function formatDeviceLabel(status: DeviceStatusRow | null) {
+  if (!status) {
+    return {
+      metric: 'Pending',
+      description: 'Waiting for the feeder to report status.',
+    };
+  }
+
+  return {
+    metric: status.online ? 'Online' : 'Offline',
+    description: `Last update ${formatRelativeTime(status.updated_at)}${
+      status.firmware_version ? `, firmware ${status.firmware_version}` : ''
+    }`,
+  };
+}
+
 function eventSummary(event: FeedingEventRow) {
   if (event.notes) {
     return event.notes;
@@ -201,6 +267,34 @@ function formatTime(value: string) {
     hour: 'numeric',
     minute: '2-digit',
   }).format(new Date(value));
+}
+
+function formatRelativeTime(value: string | null) {
+  if (!value) {
+    return 'None';
+  }
+
+  const timestamp = new Date(value).getTime();
+  const diffMs = Date.now() - timestamp;
+  const diffMinutes = Math.max(0, Math.round(diffMs / 60000));
+
+  if (diffMinutes < 1) {
+    return 'Now';
+  }
+
+  if (diffMinutes < 60) {
+    return `${diffMinutes}m ago`;
+  }
+
+  const diffHours = Math.round(diffMinutes / 60);
+
+  if (diffHours < 24) {
+    return `${diffHours}h ago`;
+  }
+
+  const diffDays = Math.round(diffHours / 24);
+
+  return `${diffDays}d ago`;
 }
 
 function EmptyState({ text }: { text: string }) {
@@ -441,6 +535,48 @@ const styles = StyleSheet.create({
   activityMeta: {
     alignItems: 'flex-end',
     gap: 2,
+  },
+  deviceCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    gap: 14,
+    padding: 16,
+  },
+  deviceCardHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+  },
+  deviceIcon: {
+    alignItems: 'center',
+    backgroundColor: '#CCFBF1',
+    borderRadius: 8,
+    height: 42,
+    justifyContent: 'center',
+    width: 42,
+  },
+  statusPill: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  onlinePill: {
+    backgroundColor: '#DCFCE7',
+  },
+  offlinePill: {
+    backgroundColor: '#FEF3C7',
+  },
+  onlinePillText: {
+    color: '#166534',
+    fontWeight: '800',
+  },
+  offlinePillText: {
+    color: '#92400E',
+    fontWeight: '800',
+  },
+  deviceMetricRow: {
+    flexDirection: 'row',
+    gap: 10,
   },
   primaryButton: {
     alignItems: 'center',

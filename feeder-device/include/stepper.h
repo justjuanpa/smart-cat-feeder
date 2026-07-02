@@ -5,6 +5,8 @@
 #ifndef STEPPER_H
 #define STEPPER_H
 
+#include <stdbool.h>
+
 //6/6/26 note:
 //hey future jay the code for the stepper is almost done 
 //the only major thing that needs to happen is making work

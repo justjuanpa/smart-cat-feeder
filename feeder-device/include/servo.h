@@ -4,6 +4,8 @@
 #ifndef SERVO_H
 #define SERVO_H
 
+#include <stdbool.h>
+
 void open_cover();
 void close_cover(); 
 void servo_init();

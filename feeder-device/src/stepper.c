@@ -28,10 +28,10 @@ void step_init(){
     gpio_set_direction(RIGHTSTEP_4_PIN, GPIO_MODE_OUTPUT);
 }
 
-bool enable_left;
+volatile bool enable_left;
 bool clean_once_left = true;
 
-bool enable_right;
+volatile bool enable_right;
 bool clean_once_right = true; 
 
 void stepperEnableLeft(bool val){

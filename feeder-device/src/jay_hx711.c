@@ -1,4 +1,5 @@
 // hx711.c
+#include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_timer.h"
@@ -12,7 +13,12 @@
 #define HX711_DOUT_2 GPIO_NUM_7
 #define HX711_SCK_2 GPIO_NUM_8
 
-bool cell_enable;
+#define LOAD_CELL_SAMPLES 15
+#define LEFT_TARGET_GRAMS 5
+#define RIGHT_TARGET_GRAMS 5
+
+static volatile bool left_dispense_enabled = false;
+static volatile bool right_dispense_enabled = false;
 
 
 
@@ -136,18 +142,86 @@ esp_err_t hx711_read_average(hx711_t *dev, uint32_t times, int32_t *data)
 }
 
 void load_cell_task_en(bool val){
-    cell_enable = val;
+    load_cell_enable_left(val);
+    load_cell_enable_right(val);
+}
+
+void load_cell_enable_left(bool val){
+    left_dispense_enabled = val;
+
+    if (!val) {
+        stepperEnableLeft(false);
+        servoEnableLeft(false);
+    }
+}
+
+void load_cell_enable_right(bool val){
+    right_dispense_enabled = val;
+
+    if (!val) {
+        stepperEnableRight(false);
+        servoEnableRight(false);
+    }
+}
+
+void load_cell_stop_all(void){
+    load_cell_enable_left(false);
+    load_cell_enable_right(false);
+}
+
+static void update_left_dispense(bool ready, int grams)
+{
+    if (!left_dispense_enabled) {
+        return;
+    }
+
+    if (!ready) {
+        printf("Left HX711 not ready; stopping left dispense\n");
+        load_cell_enable_left(false);
+        return;
+    }
+
+    if (grams < LEFT_TARGET_GRAMS) {
+        printf("Left bowl dispensing: %d/%d g\n", grams, LEFT_TARGET_GRAMS);
+        servoEnableLeft(true);
+        stepperEnableLeft(true);
+        return;
+    }
+
+    printf("Left bowl target reached: %d/%d g\n", grams, LEFT_TARGET_GRAMS);
+    load_cell_enable_left(false);
+}
+
+static void update_right_dispense(bool ready, int grams)
+{
+    if (!right_dispense_enabled) {
+        return;
+    }
+
+    if (!ready) {
+        printf("Right HX711 not ready; stopping right dispense\n");
+        load_cell_enable_right(false);
+        return;
+    }
+
+    if (grams < RIGHT_TARGET_GRAMS) {
+        printf("Right bowl dispensing: %d/%d g\n", grams, RIGHT_TARGET_GRAMS);
+        servoEnableRight(true);
+        stepperEnableRight(true);
+        return;
+    }
+
+    printf("Right bowl target reached: %d/%d g\n", grams, RIGHT_TARGET_GRAMS);
+    load_cell_enable_right(false);
 }
 
 void load_cell_task(void *parameters){
     bool ready_1 = false;
     int32_t raw_1 = 0;
-    uint32_t samples_1 = 15;
     int32_t offset_1 = 148603;
     float scale_1 = 428; 
     float grams_1 = 0;
     int rounded_grams_1 = 0;
-    int userSet_grams_1 = 5;
 
     hx711_t assign_1 = {
         .dout = HX711_DOUT_1,
@@ -159,12 +233,10 @@ void load_cell_task(void *parameters){
 
     bool ready_2 = false;
     int32_t raw_2 = 0;
-    uint32_t samples_2 = 15;
     int32_t offset_2 = 149623;
     float scale_2 = 428; 
     float grams_2 = 0;
     int rounded_grams_2 = 0;
-    int userSet_grams_2 = 5;
 
     hx711_t assign_2 = {
         .dout = HX711_DOUT_2,
@@ -182,58 +254,27 @@ void load_cell_task(void *parameters){
 
 
     while(1){
-        //if (cell_enable) {
-            hx711_is_ready(&assign_1, &ready_1);
-            hx711_is_ready(&assign_2, &ready_2);
+        hx711_is_ready(&assign_1, &ready_1);
+        hx711_is_ready(&assign_2, &ready_2);
 
+        if (ready_1){
+            hx711_read_average(&assign_1, LOAD_CELL_SAMPLES, &raw_1);
+            grams_1 = (raw_1 - offset_1) / scale_1;
+            rounded_grams_1 = (int)(grams_1 + 0.5f);
+            printf("Raw = %ld, Weight = %d g for left load cell\n", (long)raw_1, rounded_grams_1);
+        }
 
-            if (ready_1){
-                hx711_read_average(&assign_1, samples_1, &raw_1);
-                grams_1 = (raw_1 - offset_1) / scale_1; 
-                rounded_grams_1 = (int)(grams_1 + 0.5f);
-                //printf("Raw = %ld, Weight = %.2f g for load cell 1\n", (long)raw_1, grams_1);
-                printf("Raw = %ld, Weight = %d g for load cell 1\n", (long)raw_1, rounded_grams_1);
-            vTaskDelay(pdMS_TO_TICKS(250));
-            } 
-            else {
-                printf("HX711 1 not ready\n");
-            }
+        if (ready_2){
+            hx711_read_average(&assign_2, LOAD_CELL_SAMPLES, &raw_2);
+            grams_2 = (raw_2 - offset_2) / scale_2;
+            rounded_grams_2 = (int)(grams_2 + 0.5f);
+            printf("Raw = %ld, Weight = %d g for right load cell\n", (long)raw_2, rounded_grams_2);
+        }
 
-            if (ready_2){
-                hx711_read_average(&assign_2, samples_2, &raw_2);
-                grams_2 = (raw_2 - offset_2) / scale_2; 
-                rounded_grams_2 = (int)(grams_2 + 0.5f);
-                //printf("Raw = %ld, Weight = %.2f g for load cell 2\n", (long)raw_2, grams_2);
-                //printf("Raw = %ld, Weight = %d g for load cell 2\n", (long)raw_2, rounded_grams_2);
-            } 
-            else {
-                //printf("HX711 2 not ready\n");
-            }
-            vTaskDelay(pdMS_TO_TICKS(500));
+        update_left_dispense(ready_1, rounded_grams_1);
+        update_right_dispense(ready_2, rounded_grams_2);
 
-            if ((rounded_grams_1 < userSet_grams_1) && ready_1){ //meaning nothing is in the bowl 
-                //if the alloted user time has passed 
-                //the stepper should start spinning 
-                //if not just idle and chill
-                //create the stepper task here
-                stepper_enable(true);
-                servoEnable(true);
-                //printf("Bowl 1 %d grams of food\n", rounded_grams_1);
-
-            } else if (((userSet_grams_1 == rounded_grams_1 || userSet_grams_1 < rounded_grams_1)) && ready_1){ //the second condition is just for safety
-                //printf("Bowl 1 has %d grams of food\n", rounded_grams_1);
-                
-                stepper_enable(false);
-                servoEnable(false);
-                //the stepper should spinning
-                //so i guess I create the the stepper task here
-                //or rather delete the stepper task
-                //or maybe a different task one that cause the self cleanning than the ending of spinning 
-                //is a higher number higher prority? idk 
-                //also what core do you what this on?
-                //does it matter?
-            }
-        //}
+        vTaskDelay(pdMS_TO_TICKS(500));
     }
 
 }

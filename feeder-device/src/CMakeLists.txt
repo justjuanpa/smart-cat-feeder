@@ -8,11 +8,9 @@
 idf_component_register(
     SRCS 
     "main.c" 
-    "jay_hx711.c" 
     "uart_comm.c" 
     "wifi_sta.c" 
     "web_server.c"
-    "feeder_control.c"
     "servo.c"
     "stepper.c"
     "ledstrip.c"

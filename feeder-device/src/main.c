@@ -1,18 +1,21 @@
 #include <stdio.h> //obviously needed for c applications
+#include <assert.h>
 
 #include "freertos/FreeRTOS.h" //need for tasks
 #include "freertos/event_groups.h" 
+#include "freertos/semphr.h"
+#include "driver/gpio.h"
 #include "esp_err.h"
 #include "esp_log.h"          // for ESP_LOGV, ESP_LOGI, esp_log_level_set
 #include "servo.h"
 #include "stepper.h"
 #include "ledstrip.h"
-#include "jay_hx711.h"
 #include "uart_comm.h"
 #include <string.h>
 
 
 #define PIR_PIN GPIO_NUM_4
+#define SERVO_TEST_OPEN_MS 3000
 char pi_command[256];
 char esp_command[256] = "PIR TRIGGERED\r\n";
 
@@ -69,26 +72,24 @@ void UART_task(void *parameters){
         printf("Recieved: %s\n", pi_command);
         if (strcmp(pi_command, "RIGHT") == 0 || strcmp(pi_command, "ALLOW") == 0 || strcmp(pi_command, "OPEN") == 0){ //if the raspberry pi says to open the right side
             vTaskDelay(pdMS_TO_TICKS(50));
-            printf("This is where you should open the right servo and load cell task\n");
-            load_cell_task_en(true); //what should happen when this is false? 
-            //also should i make this for like the right side or something 
-            //for now ill make the command allow or open cause thats what the code has
-
-            //open right servo 
-            //activate the load cell task for right load cell and the stepper 
-            //ill need load cell enable functions 
-            //and servo enable functions
+            printf("Opening right servo for test cycle\n");
+            servoEnableRight(true);
+            vTaskDelay(pdMS_TO_TICKS(SERVO_TEST_OPEN_MS));
+            servoEnableRight(false);
         }
 
         if (strcmp(pi_command, "LEFT") == 0){ //if the raspberry pi says to open the left side 
-            printf("This is where you should open the left servo and load cell task");
-            //open the left servo 
-            //activate the load cell task for left load cell and the stepper 
+            printf("Opening left servo for test cycle\n");
+            servoEnableLeft(true);
+            vTaskDelay(pdMS_TO_TICKS(SERVO_TEST_OPEN_MS));
+            servoEnableLeft(false);
         }
 
-        // if (strcmp(pi_command, "NONE") == 0){ //if the raspberry pi saus to do nothing
-            //ths one may not be nessary at the moment
-        // }
+        if (strcmp(pi_command, "DENY") == 0){
+            printf("Vision denied access; keeping servos closed\n");
+            servoEnableLeft(false);
+            servoEnableRight(false);
+        }
 
                 //the if statemments are seperate if statements instead of 
                 //if else statement because both pets can have the food dispense at the same time 
@@ -127,7 +128,8 @@ void app_main(void)
     xTaskCreatePinnedToCore(read_TSL2591,"find light in darkness",4096,NULL, 2,NULL,0); //servo and stepper will be on the same core 
     xTaskCreatePinnedToCore(servoRotate_task,"rotate the servo back a forth", 4096,NULL, 4,NULL,0); //servo and stepper will be on the same core 
     //xTaskCreatePinnedToCore(stepper_spin_task, "rotate the steppper", 4096,NULL, 4,NULL,0); //servo and stepper will be on the same core 
-    xTaskCreatePinnedToCore(load_cell_task,"activate the load cell to read food weight, activate the stepper motors to dispense food",4096,NULL,4, NULL,1); //im putting this on core 1 because it has a task running inside of it 
+    // Load-cell and stepper dispensing stay disabled for the first servo-only integration test.
+    //xTaskCreatePinnedToCore(load_cell_task,"activate the load cell to read food weight, activate the stepper motors to dispense food",4096,NULL,4, NULL,1); //im putting this on core 1 because it has a task running inside of it 
     xTaskCreatePinnedToCore(UART_task,"serial data task",4096,NULL,3,NULL,1);
         
 }

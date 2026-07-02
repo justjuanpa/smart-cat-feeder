@@ -1,0 +1,73 @@
+# PAWS Device Ingestion Client
+
+This folder contains a small Python client for sending Raspberry Pi feeder
+status and feeding events to the Supabase Edge Function.
+
+## Environment
+
+Set these on the Raspberry Pi:
+
+```bash
+export PAWS_INGEST_URL="https://your-project-ref.supabase.co/functions/v1/ingest-device"
+export PAWS_DEVICE_SERIAL="PAWS-DEMO-001"
+export PAWS_DEVICE_TOKEN="the-plain-token-used-in-provision-demo-device.sql"
+```
+
+## Heartbeat
+
+Use this while only the camera is connected:
+
+```bash
+python ai-model/device-ingestion/paws_ingest_client.py \
+  --motion-detected \
+  --vision-version camera-only-test
+```
+
+## Feeding Event
+
+Use this after the CV pipeline makes an allow/deny decision:
+
+```bash
+python ai-model/device-ingestion/paws_ingest_client.py \
+  --event-type authorized \
+  --label Milo \
+  --confidence 0.91 \
+  --authorized \
+  --notes "Camera recognized Milo"
+```
+
+When motors and sensors are integrated, add values such as:
+
+```bash
+python ai-model/device-ingestion/paws_ingest_client.py \
+  --event-type dispensed \
+  --label Milo \
+  --confidence 0.91 \
+  --authorized \
+  --amount-grams 22 \
+  --current-weight-grams 118
+```
+
+## UART Bridge Integration
+
+`ai-model/uart_pet_gate.py` now reports to the cloud automatically when these
+environment variables are set. It still works without them, so local UART tests
+are not blocked by Wi-Fi or Supabase.
+
+```bash
+export PAWS_INGEST_URL="https://your-project-ref.supabase.co/functions/v1/ingest-device"
+export PAWS_DEVICE_SERIAL="PAWS-DEMO-001"
+export PAWS_DEVICE_TOKEN="the-plain-token-used-in-provision-demo-device.sql"
+
+python ai-model/uart_pet_gate.py --port /dev/serial0 --baud 115200
+```
+
+Cloud writes performed by `uart_pet_gate.py`:
+
+- startup heartbeat: marks the device reachable
+- `TRIGGER` received: updates motion/status
+- no allowed pet detected: writes a `denied` feeding event
+- allowed pet detected: writes an `authorized` feeding event
+
+Motor and load-cell results should be added later as `dispensed` and
+`consumed` events once those hardware pieces are connected.

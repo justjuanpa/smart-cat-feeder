@@ -45,10 +45,64 @@ device writes. The intended path is:
 4. Edge Function verifies the device token and writes to `feeding_events` using
    the service role key.
 
-That Edge Function is the next backend piece after the schema is live.
+For a real customer product, pairing would usually work like this:
+
+1. User signs into the mobile app.
+2. User scans a QR code on the feeder.
+3. The phone temporarily connects to the feeder through Bluetooth or setup Wi-Fi.
+4. The phone gives the feeder the home Wi-Fi credentials and a cloud pairing
+   token.
+5. The feeder stores its device token locally and talks to the cloud directly.
+
+For the senior-design prototype, use the same cloud shape with simpler manual
+provisioning:
+
+1. Sign into the mobile app once so your user exists in `profiles`.
+2. Copy that profile/user id.
+3. Run `supabase/provision-demo-device.sql` in the Supabase SQL Editor after
+   replacing the owner id, serial number, and plain token.
+4. Configure the Raspberry Pi with:
+   - `PAWS_INGEST_URL`
+   - `PAWS_DEVICE_SERIAL`
+   - `PAWS_DEVICE_TOKEN`
+5. Deploy the function:
+
+   ```bash
+   supabase functions deploy ingest-device
+   ```
+
+The function has `verify_jwt = false` in `supabase/config.toml` because device
+authentication is handled with the per-device token in the
+`x-paws-device-token` header.
+
+### Test From The Pi Or Laptop
+
+Heartbeat/status only:
+
+```bash
+python ai-model/device-ingestion/paws_ingest_client.py \
+  --current-weight-grams 0 \
+  --motion-detected \
+  --vision-version phone-camera-test
+```
+
+Camera recognition event:
+
+```bash
+python ai-model/device-ingestion/paws_ingest_client.py \
+  --event-type authorized \
+  --label Milo \
+  --confidence 0.91 \
+  --authorized \
+  --notes "Camera-only integration test"
+```
 
 ## Local Files
 
 - `supabase/schema.sql`: database tables, indexes, and Row Level Security.
+- `supabase/config.toml`: Supabase function settings.
+- `supabase/functions/ingest-device/index.ts`: secure device ingestion endpoint.
+- `supabase/provision-demo-device.sql`: helper SQL for creating a prototype
+  feeder credential.
 - `.env.example`: environment variables needed by the mobile app and backend
   tooling.

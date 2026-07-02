@@ -18,6 +18,12 @@ Thumbs.db
 # VS Code
 .vscode/
 
+# Expo local state
+.expo/
+
+# Supabase local CLI state
+backend/supabase/.temp/
+
 # Local environment files
 .env
 .env.local

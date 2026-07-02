@@ -5,33 +5,41 @@
 #include "stepper.h"
 #include "esp_err.h"
 
-#define STEPPER1_1_PIN GPIO_NUM_9
-#define STEPPER1_2_PIN GPIO_NUM_10
-#define STEPPER1_3_PIN GPIO_NUM_11
-#define STEPPER1_4_PIN GPIO_NUM_12
+#define RIGHTSTEP_1_PIN GPIO_NUM_9
+#define RIGHTSTEP_2_PIN GPIO_NUM_10
+#define RIGHTSTEP_3_PIN GPIO_NUM_11
+#define RIGHTSTEP_4_PIN GPIO_NUM_12
 
-#define STEPPER2_1_PIN GPIO_NUM_13
-#define STEPPER2_2_PIN GPIO_NUM_14
-#define STEPPER2_3_PIN GPIO_NUM_15
-#define STEPPER2_4_PIN GPIO_NUM_16
+#define LEFTSTEP_1_PIN GPIO_NUM_13
+#define LEFTSTEP_2_PIN GPIO_NUM_14
+#define LEFTSTEP_3_PIN GPIO_NUM_15
+#define LEFTSTEP_4_PIN GPIO_NUM_16
 
 
 void step_init(){
-    gpio_set_direction(STEPPER1_1_PIN, GPIO_MODE_OUTPUT);
-    gpio_set_direction(STEPPER1_2_PIN, GPIO_MODE_OUTPUT);
-    gpio_set_direction(STEPPER1_3_PIN, GPIO_MODE_OUTPUT);
-    gpio_set_direction(STEPPER1_4_PIN, GPIO_MODE_OUTPUT);
-    gpio_set_direction(STEPPER2_1_PIN, GPIO_MODE_OUTPUT);
-    gpio_set_direction(STEPPER2_2_PIN, GPIO_MODE_OUTPUT);
-    gpio_set_direction(STEPPER2_3_PIN, GPIO_MODE_OUTPUT);
-    gpio_set_direction(STEPPER2_4_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_direction(LEFTSTEP_1_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_direction(LEFTSTEP_2_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_direction(LEFTSTEP_3_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_direction(LEFTSTEP_4_PIN, GPIO_MODE_OUTPUT);
+
+    gpio_set_direction(RIGHTSTEP_1_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_direction(RIGHTSTEP_2_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_direction(RIGHTSTEP_3_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_direction(RIGHTSTEP_4_PIN, GPIO_MODE_OUTPUT);
 }
 
-bool enable;
-bool clean_once = true;
+bool enable_left;
+bool clean_once_left = true;
 
-void stepper_enable(bool val){
-    enable = val;
+bool enable_right;
+bool clean_once_right = true; 
+
+void stepperEnableLeft(bool val){
+    enable_left = val;
+}
+
+void stepperEnableRight(bool val){
+    enable_right = val; 
 }
 
 void stepper_spin_task (void *parameters){
@@ -41,68 +49,68 @@ void stepper_spin_task (void *parameters){
 
     while(1) {//for (int i = 0; i < 200; i++){
                 //printf("hey now here \n");
-        gpio_set_level(STEPPER1_1_PIN, 1);
-        gpio_set_level(STEPPER1_2_PIN, 0);
-        gpio_set_level(STEPPER1_3_PIN, 0);
-        gpio_set_level(STEPPER1_4_PIN, 0);
+        gpio_set_level(LEFTSTEP_1_PIN, 1);
+        gpio_set_level(LEFTSTEP_2_PIN, 0);
+        gpio_set_level(LEFTSTEP_3_PIN, 0);
+        gpio_set_level(LEFTSTEP_4_PIN, 0);
         vTaskDelay(pdMS_TO_TICKS(10));
 
-        gpio_set_level(STEPPER1_1_PIN, 0);
-        gpio_set_level(STEPPER1_2_PIN, 1);
-        gpio_set_level(STEPPER1_3_PIN, 0);
-        gpio_set_level(STEPPER1_4_PIN, 0);
+        gpio_set_level(LEFTSTEP_1_PIN, 0);
+        gpio_set_level(LEFTSTEP_2_PIN, 1);
+        gpio_set_level(LEFTSTEP_3_PIN, 0);
+        gpio_set_level(LEFTSTEP_4_PIN, 0);
         vTaskDelay(pdMS_TO_TICKS(10));
 
-        gpio_set_level(STEPPER1_1_PIN, 0);
-        gpio_set_level(STEPPER1_2_PIN, 0);
-        gpio_set_level(STEPPER1_3_PIN, 1);
-        gpio_set_level(STEPPER1_4_PIN, 0);
+        gpio_set_level(LEFTSTEP_1_PIN, 0);
+        gpio_set_level(LEFTSTEP_2_PIN, 0);
+        gpio_set_level(LEFTSTEP_3_PIN, 1);
+        gpio_set_level(LEFTSTEP_4_PIN, 0);
         vTaskDelay(pdMS_TO_TICKS(10));
 
-        gpio_set_level(STEPPER1_1_PIN, 0);
-        gpio_set_level(STEPPER1_2_PIN, 0);
-        gpio_set_level(STEPPER1_3_PIN, 0);
-        gpio_set_level(STEPPER1_4_PIN, 1);
+        gpio_set_level(LEFTSTEP_1_PIN, 0);
+        gpio_set_level(LEFTSTEP_2_PIN, 0);
+        gpio_set_level(LEFTSTEP_3_PIN, 0);
+        gpio_set_level(LEFTSTEP_4_PIN, 1);
         vTaskDelay(pdMS_TO_TICKS(10));
 
 
-        gpio_set_level(STEPPER2_1_PIN, 1);
-        gpio_set_level(STEPPER2_2_PIN, 0);
-        gpio_set_level(STEPPER2_3_PIN, 0);
-        gpio_set_level(STEPPER2_4_PIN, 0);
+        gpio_set_level(RIGHTSTEP_1_PIN, 1);
+        gpio_set_level(RIGHTSTEP_2_PIN, 0);
+        gpio_set_level(RIGHTSTEP_3_PIN, 0);
+        gpio_set_level(RIGHTSTEP_4_PIN, 0);
         vTaskDelay(pdMS_TO_TICKS(10));
 
-        gpio_set_level(STEPPER2_1_PIN, 0);
-        gpio_set_level(STEPPER2_2_PIN, 1);
-        gpio_set_level(STEPPER2_3_PIN, 0);
-        gpio_set_level(STEPPER2_4_PIN, 0);
+        gpio_set_level(RIGHTSTEP_1_PIN, 0);
+        gpio_set_level(RIGHTSTEP_2_PIN, 1);
+        gpio_set_level(RIGHTSTEP_3_PIN, 0);
+        gpio_set_level(RIGHTSTEP_4_PIN, 0);
         vTaskDelay(pdMS_TO_TICKS(10));
 
-        gpio_set_level(STEPPER2_1_PIN, 0);
-        gpio_set_level(STEPPER2_2_PIN, 0);
-        gpio_set_level(STEPPER2_3_PIN, 1);
-        gpio_set_level(STEPPER2_4_PIN, 0);
+        gpio_set_level(RIGHTSTEP_1_PIN, 0);
+        gpio_set_level(RIGHTSTEP_2_PIN, 0);
+        gpio_set_level(RIGHTSTEP_3_PIN, 1);
+        gpio_set_level(RIGHTSTEP_4_PIN, 0);
         vTaskDelay(pdMS_TO_TICKS(10));
 
-        gpio_set_level(STEPPER2_1_PIN, 0);
-        gpio_set_level(STEPPER2_2_PIN, 0);
-        gpio_set_level(STEPPER2_3_PIN, 0);
-        gpio_set_level(STEPPER2_4_PIN, 1);
+        gpio_set_level(RIGHTSTEP_1_PIN, 0);
+        gpio_set_level(RIGHTSTEP_2_PIN, 0);
+        gpio_set_level(RIGHTSTEP_3_PIN, 0);
+        gpio_set_level(RIGHTSTEP_4_PIN, 1);
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 
     //vTaskDelay(pdMS_TO_TICKS(1000));
-    // gpio_set_level(STEPPER1_1_PIN, 0);
-    // gpio_set_level(STEPPER1_2_PIN, 0);
-    // gpio_set_level(STEPPER1_3_PIN, 0);
-    // gpio_set_level(STEPPER1_4_PIN, 0);
+    // gpio_set_level(LEFTSTEP_1_PIN, 0);
+    // gpio_set_level(LEFTSTEP_2_PIN, 0);
+    // gpio_set_level(LEFTSTEP_3_PIN, 0);
+    // gpio_set_level(LEFTSTEP_4_PIN, 0);
     // vTaskDelay(pdMS_TO_TICKS(10));
 
 
-    // gpio_set_level(STEPPER2_1_PIN, 0);
-    // gpio_set_level(STEPPER2_2_PIN, 0);
-    // gpio_set_level(STEPPER2_3_PIN, 0);
-    // gpio_set_level(STEPPER2_4_PIN, 0);
+    // gpio_set_level(RIGHTSTEP_1_PIN, 0);
+    // gpio_set_level(RIGHTSTEP_2_PIN, 0);
+    // gpio_set_level(RIGHTSTEP_3_PIN, 0);
+    // gpio_set_level(RIGHTSTEP_4_PIN, 0);
     // vTaskDelay(pdMS_TO_TICKS(10));
 
     vTaskDelete(NULL);
@@ -118,53 +126,53 @@ void stepper_stop_task(void *parameters){
     //easy
 
     for (int i = 0; i < 2000; i++){
-        gpio_set_level(STEPPER1_1_PIN, 0);
-        gpio_set_level(STEPPER1_2_PIN, 0);
-        gpio_set_level(STEPPER1_3_PIN, 0);
-        gpio_set_level(STEPPER1_4_PIN, 1);
+        gpio_set_level(LEFTSTEP_1_PIN, 0);
+        gpio_set_level(LEFTSTEP_2_PIN, 0);
+        gpio_set_level(LEFTSTEP_3_PIN, 0);
+        gpio_set_level(LEFTSTEP_4_PIN, 1);
         vTaskDelay(pdMS_TO_TICKS(10));
 
-        gpio_set_level(STEPPER1_1_PIN, 0);
-        gpio_set_level(STEPPER1_2_PIN, 0);
-        gpio_set_level(STEPPER1_3_PIN, 1);
-        gpio_set_level(STEPPER1_4_PIN, 0);
+        gpio_set_level(LEFTSTEP_1_PIN, 0);
+        gpio_set_level(LEFTSTEP_2_PIN, 0);
+        gpio_set_level(LEFTSTEP_3_PIN, 1);
+        gpio_set_level(LEFTSTEP_4_PIN, 0);
         vTaskDelay(pdMS_TO_TICKS(10));
 
-        gpio_set_level(STEPPER1_1_PIN, 0);
-        gpio_set_level(STEPPER1_2_PIN, 1);
-        gpio_set_level(STEPPER1_3_PIN, 0);
-        gpio_set_level(STEPPER1_4_PIN, 0);
+        gpio_set_level(LEFTSTEP_1_PIN, 0);
+        gpio_set_level(LEFTSTEP_2_PIN, 1);
+        gpio_set_level(LEFTSTEP_3_PIN, 0);
+        gpio_set_level(LEFTSTEP_4_PIN, 0);
         vTaskDelay(pdMS_TO_TICKS(10));
 
-        gpio_set_level(STEPPER1_1_PIN, 1);
-        gpio_set_level(STEPPER1_2_PIN, 0);
-        gpio_set_level(STEPPER1_3_PIN, 0);
-        gpio_set_level(STEPPER1_4_PIN, 0);
+        gpio_set_level(LEFTSTEP_1_PIN, 1);
+        gpio_set_level(LEFTSTEP_2_PIN, 0);
+        gpio_set_level(LEFTSTEP_3_PIN, 0);
+        gpio_set_level(LEFTSTEP_4_PIN, 0);
         vTaskDelay(pdMS_TO_TICKS(10));
 
 
-        gpio_set_level(STEPPER2_1_PIN, 0);
-        gpio_set_level(STEPPER2_2_PIN, 0);
-        gpio_set_level(STEPPER2_3_PIN, 0);
-        gpio_set_level(STEPPER2_4_PIN, 1);
+        gpio_set_level(RIGHTSTEP_1_PIN, 0);
+        gpio_set_level(RIGHTSTEP_2_PIN, 0);
+        gpio_set_level(RIGHTSTEP_3_PIN, 0);
+        gpio_set_level(RIGHTSTEP_4_PIN, 1);
         vTaskDelay(pdMS_TO_TICKS(10));
 
-        gpio_set_level(STEPPER2_1_PIN, 0);
-        gpio_set_level(STEPPER2_2_PIN, 0);
-        gpio_set_level(STEPPER2_3_PIN, 1);
-        gpio_set_level(STEPPER2_4_PIN, 0);
+        gpio_set_level(RIGHTSTEP_1_PIN, 0);
+        gpio_set_level(RIGHTSTEP_2_PIN, 0);
+        gpio_set_level(RIGHTSTEP_3_PIN, 1);
+        gpio_set_level(RIGHTSTEP_4_PIN, 0);
         vTaskDelay(pdMS_TO_TICKS(10));
 
-        gpio_set_level(STEPPER2_1_PIN, 0);
-        gpio_set_level(STEPPER2_2_PIN, 1);
-        gpio_set_level(STEPPER2_3_PIN, 0);
-        gpio_set_level(STEPPER2_4_PIN, 0);
+        gpio_set_level(RIGHTSTEP_1_PIN, 0);
+        gpio_set_level(RIGHTSTEP_2_PIN, 1);
+        gpio_set_level(RIGHTSTEP_3_PIN, 0);
+        gpio_set_level(RIGHTSTEP_4_PIN, 0);
         vTaskDelay(pdMS_TO_TICKS(10));
 
-        gpio_set_level(STEPPER2_1_PIN, 1);
-        gpio_set_level(STEPPER2_2_PIN, 0);
-        gpio_set_level(STEPPER2_3_PIN, 0);
-        gpio_set_level(STEPPER2_4_PIN, 0);
+        gpio_set_level(RIGHTSTEP_1_PIN, 1);
+        gpio_set_level(RIGHTSTEP_2_PIN, 0);
+        gpio_set_level(RIGHTSTEP_3_PIN, 0);
+        gpio_set_level(RIGHTSTEP_4_PIN, 0);
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 
@@ -173,123 +181,149 @@ void stepper_stop_task(void *parameters){
 }
 
 void stepper_task(void *parameter){
+    int cleanLcounter = 0;
+    int cleanRcounter = 0;
+    
     while (1){
-        if (enable) {
-        //printf("enable: %d clean once: %d \n", enable, clean_once);
-                //printf("hey now here \n");
-        gpio_set_level(STEPPER1_1_PIN, 1);
-        gpio_set_level(STEPPER1_2_PIN, 0);
-        gpio_set_level(STEPPER1_3_PIN, 0);
-        gpio_set_level(STEPPER1_4_PIN, 0);
-        vTaskDelay(pdMS_TO_TICKS(10));
-
-        gpio_set_level(STEPPER1_1_PIN, 0);
-        gpio_set_level(STEPPER1_2_PIN, 1);
-        gpio_set_level(STEPPER1_3_PIN, 0);
-        gpio_set_level(STEPPER1_4_PIN, 0);
-        vTaskDelay(pdMS_TO_TICKS(10));
-
-        gpio_set_level(STEPPER1_1_PIN, 0);
-        gpio_set_level(STEPPER1_2_PIN, 0);
-        gpio_set_level(STEPPER1_3_PIN, 1);
-        gpio_set_level(STEPPER1_4_PIN, 0);
-        vTaskDelay(pdMS_TO_TICKS(10));
-
-        gpio_set_level(STEPPER1_1_PIN, 0);
-        gpio_set_level(STEPPER1_2_PIN, 0);
-        gpio_set_level(STEPPER1_3_PIN, 0);
-        gpio_set_level(STEPPER1_4_PIN, 1);
-        vTaskDelay(pdMS_TO_TICKS(10));
-
-
-        gpio_set_level(STEPPER2_1_PIN, 1);
-        gpio_set_level(STEPPER2_2_PIN, 0);
-        gpio_set_level(STEPPER2_3_PIN, 0);
-        gpio_set_level(STEPPER2_4_PIN, 0);
-        vTaskDelay(pdMS_TO_TICKS(10));
-
-        gpio_set_level(STEPPER2_1_PIN, 0);
-        gpio_set_level(STEPPER2_2_PIN, 1);
-        gpio_set_level(STEPPER2_3_PIN, 0);
-        gpio_set_level(STEPPER2_4_PIN, 0);
-        vTaskDelay(pdMS_TO_TICKS(10));
-
-        gpio_set_level(STEPPER2_1_PIN, 0);
-        gpio_set_level(STEPPER2_2_PIN, 0);
-        gpio_set_level(STEPPER2_3_PIN, 1);
-        gpio_set_level(STEPPER2_4_PIN, 0);
-        vTaskDelay(pdMS_TO_TICKS(10));
-
-        gpio_set_level(STEPPER2_1_PIN, 0);
-        gpio_set_level(STEPPER2_2_PIN, 0);
-        gpio_set_level(STEPPER2_3_PIN, 0);
-        gpio_set_level(STEPPER2_4_PIN, 1);
-        vTaskDelay(pdMS_TO_TICKS(10));
-        clean_once = 0;
-        } 
-        else {
-            //printf("enable: %d clean once: %d \n", enable, clean_once);
-            if (clean_once == 0){
-                clean_once = 1;
-                for (int i = 0; i < 500; i++){
-                    gpio_set_level(STEPPER1_1_PIN, 0);
-                    gpio_set_level(STEPPER1_2_PIN, 0);
-                    gpio_set_level(STEPPER1_3_PIN, 0);
-                    gpio_set_level(STEPPER1_4_PIN, 1);
-                    vTaskDelay(pdMS_TO_TICKS(10));
-                    gpio_set_level(STEPPER1_1_PIN, 0);
-                    gpio_set_level(STEPPER1_2_PIN, 0);
-                    gpio_set_level(STEPPER1_3_PIN, 1);
-                    gpio_set_level(STEPPER1_4_PIN, 0);
-                    vTaskDelay(pdMS_TO_TICKS(10));
-                    gpio_set_level(STEPPER1_1_PIN, 0);
-                    gpio_set_level(STEPPER1_2_PIN, 1);
-                    gpio_set_level(STEPPER1_3_PIN, 0);
-                    gpio_set_level(STEPPER1_4_PIN, 0);
-                    vTaskDelay(pdMS_TO_TICKS(10));
-                    gpio_set_level(STEPPER1_1_PIN, 1);
-                    gpio_set_level(STEPPER1_2_PIN, 0);
-                    gpio_set_level(STEPPER1_3_PIN, 0);
-                    gpio_set_level(STEPPER1_4_PIN, 0);
-                    vTaskDelay(pdMS_TO_TICKS(10));
-
-
-                    gpio_set_level(STEPPER2_1_PIN, 0);
-                    gpio_set_level(STEPPER2_2_PIN, 0);
-                    gpio_set_level(STEPPER2_3_PIN, 0);
-                    gpio_set_level(STEPPER2_4_PIN, 1);
-                    vTaskDelay(pdMS_TO_TICKS(10));
-
-                    gpio_set_level(STEPPER2_1_PIN, 0);
-                    gpio_set_level(STEPPER2_2_PIN, 0);
-                    gpio_set_level(STEPPER2_3_PIN, 1);
-                    gpio_set_level(STEPPER2_4_PIN, 0);
-                    vTaskDelay(pdMS_TO_TICKS(10));
-
-                    gpio_set_level(STEPPER2_1_PIN, 0);
-                    gpio_set_level(STEPPER2_2_PIN, 1);
-                    gpio_set_level(STEPPER2_3_PIN, 0);
-                    gpio_set_level(STEPPER2_4_PIN, 0);
-                    vTaskDelay(pdMS_TO_TICKS(10));
-
-                    gpio_set_level(STEPPER2_1_PIN, 1);
-                    gpio_set_level(STEPPER2_2_PIN, 0);
-                    gpio_set_level(STEPPER2_3_PIN, 0);
-                    gpio_set_level(STEPPER2_4_PIN, 0);
-                    vTaskDelay(pdMS_TO_TICKS(10));
-                }
-            }
-            //to actually stop spinning
-            gpio_set_level(STEPPER1_1_PIN, 0);
-            gpio_set_level(STEPPER1_2_PIN,0);
-            gpio_set_level(STEPPER1_3_PIN, 0);
-            gpio_set_level(STEPPER1_4_PIN, 0);
+        if (enable_left) {
+            gpio_set_level(LEFTSTEP_1_PIN, 1);
+            gpio_set_level(LEFTSTEP_2_PIN, 0);
+            gpio_set_level(LEFTSTEP_3_PIN, 0);
+            gpio_set_level(LEFTSTEP_4_PIN, 0);
             vTaskDelay(pdMS_TO_TICKS(10));
 
-            gpio_set_level(STEPPER2_1_PIN, 0);
-            gpio_set_level(STEPPER2_2_PIN, 0);
-            gpio_set_level(STEPPER2_3_PIN, 0);
-            gpio_set_level(STEPPER2_4_PIN, 0);
+            gpio_set_level(LEFTSTEP_1_PIN, 0);
+            gpio_set_level(LEFTSTEP_2_PIN, 1);
+            gpio_set_level(LEFTSTEP_3_PIN, 0);
+            gpio_set_level(LEFTSTEP_4_PIN, 0);
+            vTaskDelay(pdMS_TO_TICKS(10));
+
+            gpio_set_level(LEFTSTEP_1_PIN, 0);
+            gpio_set_level(LEFTSTEP_2_PIN, 0);
+            gpio_set_level(LEFTSTEP_3_PIN, 1);
+            gpio_set_level(LEFTSTEP_4_PIN, 0);
+            vTaskDelay(pdMS_TO_TICKS(10));
+
+            gpio_set_level(LEFTSTEP_1_PIN, 0);
+            gpio_set_level(LEFTSTEP_2_PIN, 0);
+            gpio_set_level(LEFTSTEP_3_PIN, 0);
+            gpio_set_level(LEFTSTEP_4_PIN, 1);
+            vTaskDelay(pdMS_TO_TICKS(10));
+            clean_once_left = 0;
+            cleanLcounter = 0;
+
+        } 
+        else {
+            if (clean_once_left == 0){
+
+                if (cleanLcounter == 100){
+                    clean_once_left = 1;
+                } 
+                else {
+                    cleanLcounter++;
+                }
+                //for (int i = 0; i < 500; i++){
+                        gpio_set_level(LEFTSTEP_1_PIN, 0);
+                        gpio_set_level(LEFTSTEP_2_PIN, 0);
+                        gpio_set_level(LEFTSTEP_3_PIN, 0);
+                        gpio_set_level(LEFTSTEP_4_PIN, 1);
+                        vTaskDelay(pdMS_TO_TICKS(10));
+                        
+                        gpio_set_level(LEFTSTEP_1_PIN, 0);
+                        gpio_set_level(LEFTSTEP_2_PIN, 0);
+                        gpio_set_level(LEFTSTEP_3_PIN, 1);
+                        gpio_set_level(LEFTSTEP_4_PIN, 0);
+                        vTaskDelay(pdMS_TO_TICKS(10));
+                        
+                        gpio_set_level(LEFTSTEP_1_PIN, 0);
+                        gpio_set_level(LEFTSTEP_2_PIN, 1);
+                        gpio_set_level(LEFTSTEP_3_PIN, 0);
+                        gpio_set_level(LEFTSTEP_4_PIN, 0);
+                        vTaskDelay(pdMS_TO_TICKS(10));
+                        
+                        gpio_set_level(LEFTSTEP_1_PIN, 1); 
+                        gpio_set_level(LEFTSTEP_2_PIN, 0);
+                        gpio_set_level(LEFTSTEP_3_PIN, 0);
+                        gpio_set_level(LEFTSTEP_4_PIN, 0);
+                        vTaskDelay(pdMS_TO_TICKS(10));
+                    //}
+            }
+                //to actually stop spinning
+            gpio_set_level(LEFTSTEP_1_PIN, 0);
+            gpio_set_level(LEFTSTEP_2_PIN,0);
+            gpio_set_level(LEFTSTEP_3_PIN, 0);
+            gpio_set_level(LEFTSTEP_4_PIN, 0);
+            vTaskDelay(pdMS_TO_TICKS(10));
+
+    }
+
+    if (enable_right) {
+            gpio_set_level(RIGHTSTEP_1_PIN, 1);
+            gpio_set_level(RIGHTSTEP_2_PIN, 0);
+            gpio_set_level(RIGHTSTEP_3_PIN, 0);
+            gpio_set_level(RIGHTSTEP_4_PIN, 0);
+            vTaskDelay(pdMS_TO_TICKS(10));
+
+            gpio_set_level(RIGHTSTEP_1_PIN, 0);
+            gpio_set_level(RIGHTSTEP_2_PIN, 1);
+            gpio_set_level(RIGHTSTEP_3_PIN, 0);
+            gpio_set_level(RIGHTSTEP_4_PIN, 0);
+            vTaskDelay(pdMS_TO_TICKS(10));
+
+            gpio_set_level(RIGHTSTEP_1_PIN, 0);
+            gpio_set_level(RIGHTSTEP_2_PIN, 0);
+            gpio_set_level(RIGHTSTEP_3_PIN, 1);
+            gpio_set_level(RIGHTSTEP_4_PIN, 0);
+            vTaskDelay(pdMS_TO_TICKS(10));
+
+            gpio_set_level(RIGHTSTEP_1_PIN, 0);
+            gpio_set_level(RIGHTSTEP_2_PIN, 0);
+            gpio_set_level(RIGHTSTEP_3_PIN, 0);
+            gpio_set_level(RIGHTSTEP_4_PIN, 1);
+            vTaskDelay(pdMS_TO_TICKS(10));
+            clean_once_right = 0;
+            cleanRcounter = 0;
+        } 
+        else {
+            if (clean_once_right == 0){
+                if (cleanRcounter == 100){
+                    clean_once_right = 1;
+                } 
+                else {
+                    cleanRcounter++;
+                }
+
+                gpio_set_level(RIGHTSTEP_1_PIN, 0);
+                        gpio_set_level(RIGHTSTEP_2_PIN, 0);
+                        gpio_set_level(RIGHTSTEP_3_PIN, 0);
+                        gpio_set_level(RIGHTSTEP_4_PIN, 1);
+                        vTaskDelay(pdMS_TO_TICKS(10));
+                        
+                        gpio_set_level(RIGHTSTEP_1_PIN, 0);
+                        gpio_set_level(RIGHTSTEP_2_PIN, 0);
+                        gpio_set_level(RIGHTSTEP_3_PIN, 1);
+                        gpio_set_level(RIGHTSTEP_4_PIN, 0);
+                        vTaskDelay(pdMS_TO_TICKS(10));
+                        
+                        gpio_set_level(RIGHTSTEP_1_PIN, 0);
+                        gpio_set_level(RIGHTSTEP_2_PIN, 1);
+                        gpio_set_level(RIGHTSTEP_3_PIN, 0);
+                        gpio_set_level(RIGHTSTEP_4_PIN, 0);
+                        vTaskDelay(pdMS_TO_TICKS(10));
+                        
+                        gpio_set_level(RIGHTSTEP_1_PIN, 1); 
+                        gpio_set_level(RIGHTSTEP_2_PIN, 0);
+                        gpio_set_level(RIGHTSTEP_3_PIN, 0);
+                        gpio_set_level(RIGHTSTEP_4_PIN, 0);
+                        vTaskDelay(pdMS_TO_TICKS(10));
+
+            }
+                //to actually stop spinning
+            gpio_set_level(RIGHTSTEP_1_PIN, 0);
+            gpio_set_level(RIGHTSTEP_2_PIN,0);
+            gpio_set_level(RIGHTSTEP_3_PIN, 0);
+            gpio_set_level(RIGHTSTEP_4_PIN, 0);
+            vTaskDelay(pdMS_TO_TICKS(10));
 
     }
     }

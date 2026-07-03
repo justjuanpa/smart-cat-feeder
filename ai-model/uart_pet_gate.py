@@ -1,9 +1,13 @@
 import argparse
+from collections import Counter
 import os
 from pathlib import Path
 import sys
+import tempfile
 import time
 
+import cv2
+from PIL import Image
 import serial
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -21,6 +25,19 @@ PET_COMMANDS = {
     "milo": "LEFT",
     "mimi": "RIGHT",
 }
+SIDE_PETS = {
+    "LEFT": "milo",
+    "RIGHT": "mimi",
+}
+CLOSE_COMMANDS = {
+    "LEFT": "CLOSE_LEFT",
+    "RIGHT": "CLOSE_RIGHT",
+}
+OPENED_MESSAGES = {
+    "OPENED_LEFT": "LEFT",
+    "OPENED_RIGHT": "RIGHT",
+}
+PRESENCE_SIDE_ROI_DIR = burst_recognition.DEBUG_DIR / "presence_side_rois"
 
 
 def send_line(connection, message):
@@ -94,6 +111,262 @@ def detect_pet_identity(camera, yolo_model, recognizer, profiles):
     return command, result
 
 
+def side_for_bbox(bbox, image_width):
+    x1, _, x2, _ = bbox
+    center_x = (x1 + x2) / 2
+    return "LEFT" if center_x < image_width / 2 else "RIGHT"
+
+
+def crop_side_roi(frame, side):
+    midpoint = frame.shape[1] // 2
+
+    if side == "LEFT":
+        return frame[:, :midpoint]
+
+    return frame[:, midpoint:]
+
+
+def save_presence_side_roi(frame, side, frame_index):
+    side_dir = PRESENCE_SIDE_ROI_DIR / side.lower()
+    side_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp_ms = int(time.time() * 1000)
+    output_path = side_dir / f"{side.lower()}_{timestamp_ms}_{frame_index}.jpg"
+    roi = crop_side_roi(frame, side)
+    roi_rgb = cv2.cvtColor(roi, cv2.COLOR_BGR2RGB)
+    Image.fromarray(roi_rgb).save(output_path)
+
+    return output_path
+
+
+def recognize_detection_crop(frame, detection, recognizer, profiles):
+    x1, y1, x2, y2 = burst_recognition.add_padding(
+        detection["bbox"],
+        image_width=frame.shape[1],
+        image_height=frame.shape[0],
+        padding_ratio=burst_recognition.PADDING_RATIO,
+    )
+    crop = frame[y1:y2, x1:x2]
+
+    if crop.size == 0:
+        return None
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        crop_path = Path(temp_dir) / "presence_crop.jpg"
+        crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+        Image.fromarray(crop_rgb).save(crop_path)
+        return recognizer.recognize(crop_path, profiles)
+
+
+def check_pet_present_on_side(
+    camera,
+    yolo_model,
+    recognizer,
+    profiles,
+    side,
+    expected_pet,
+    frame_count,
+    min_accepted_frames,
+):
+    accepted = 0
+    seen_any_pet_in_side = 0
+    predictions = Counter()
+
+    for frame_index in range(1, frame_count + 1):
+        frame = camera.capture_array()
+        side_roi_path = save_presence_side_roi(frame, side, frame_index)
+        print(f"Presence {side} frame {frame_index}: saved side ROI to {side_roi_path}")
+        yolo_results = yolo_model(frame, verbose=False)
+        detections = []
+
+        for box in yolo_results[0].boxes:
+            cls_id = int(box.cls[0])
+            confidence = float(box.conf[0])
+            label = yolo_model.names[cls_id]
+
+            if label not in burst_recognition.ALLOWED_CLASSES:
+                continue
+
+            if confidence < burst_recognition.YOLO_CONFIDENCE_THRESHOLD:
+                continue
+
+            bbox = tuple(map(int, box.xyxy[0]))
+            if side_for_bbox(bbox, frame.shape[1]) != side:
+                continue
+
+            detections.append(
+                {
+                    "label": label,
+                    "confidence": confidence,
+                    "bbox": bbox,
+                }
+            )
+
+        if not detections:
+            print(f"Presence {side} frame {frame_index}: no pet in side ROI")
+            continue
+
+        seen_any_pet_in_side += 1
+        best_detection = max(detections, key=lambda detection: detection["confidence"])
+        recognition = recognize_detection_crop(frame, best_detection, recognizer, profiles)
+
+        if recognition is None:
+            print(f"Presence {side} frame {frame_index}: empty crop")
+            continue
+
+        prediction = recognition["prediction"].lower()
+        predictions[prediction] += 1
+
+        print(
+            f"Presence {side} frame {frame_index}: "
+            f"prediction={prediction} "
+            f"best={recognition['best_pet']} "
+            f"score={recognition['best_score']:.4f} "
+            f"accepted={recognition['accepted']}"
+        )
+
+        if recognition["accepted"] and prediction == expected_pet:
+            accepted += 1
+
+    present = accepted >= min_accepted_frames
+    print(
+        f"Presence {side}: expected={expected_pet} "
+        f"accepted={accepted}/{frame_count} "
+        f"side_pet_frames={seen_any_pet_in_side}/{frame_count} "
+        f"predictions={dict(predictions)} "
+        f"present={present}"
+    )
+    return present
+
+
+def any_bowl_active(bowl_state):
+    return any(state["status"] in {"pending", "open"} for state in bowl_state.values())
+
+
+def mark_bowl_open(bowl_state, side, args):
+    state = bowl_state[side]
+    state["status"] = "open"
+    state["misses"] = 0
+    state["next_check_at"] = time.monotonic() + args.presence_check_interval
+    print(f"{side} bowl is open; next presence check in {args.presence_check_interval}s")
+
+
+def close_bowl(connection, bowl_state, side):
+    send_line(connection, CLOSE_COMMANDS[side])
+    print(f"UART => {CLOSE_COMMANDS[side]}")
+    bowl_state[side]["status"] = "closed"
+    bowl_state[side]["misses"] = 0
+    bowl_state[side]["next_check_at"] = None
+
+
+def run_due_presence_checks(
+    connection,
+    bowl_state,
+    args,
+    camera,
+    yolo_model,
+    recognizer,
+    profiles,
+):
+    now = time.monotonic()
+
+    for side, state in bowl_state.items():
+        if state["status"] != "open":
+            continue
+
+        if state["next_check_at"] is None or now < state["next_check_at"]:
+            continue
+
+        expected_pet = SIDE_PETS[side]
+        print(f"Checking whether {expected_pet} is still at {side} bowl")
+        present = check_pet_present_on_side(
+            camera=camera,
+            yolo_model=yolo_model,
+            recognizer=recognizer,
+            profiles=profiles,
+            side=side,
+            expected_pet=expected_pet,
+            frame_count=args.presence_frames,
+            min_accepted_frames=args.presence_min_accepted_frames,
+        )
+
+        if present:
+            state["misses"] = 0
+            state["next_check_at"] = time.monotonic() + args.presence_check_interval
+            print(f"{expected_pet} still present at {side}; keeping lid open")
+            continue
+
+        state["misses"] += 1
+        print(
+            f"{expected_pet} missed at {side}: "
+            f"{state['misses']}/{args.presence_misses_to_close}"
+        )
+
+        if state["misses"] >= args.presence_misses_to_close:
+            close_bowl(connection, bowl_state, side)
+        else:
+            state["next_check_at"] = time.monotonic() + args.presence_check_interval
+
+
+def handle_trigger(
+    connection,
+    bowl_state,
+    args,
+    camera,
+    yolo_model,
+    recognizer,
+    profiles,
+):
+    report_to_cloud(args, {"motion_detected": True})
+
+    command, result = detect_pet_identity(
+        camera=camera,
+        yolo_model=yolo_model,
+        recognizer=recognizer,
+        profiles=profiles,
+    )
+
+    if command is None:
+        if any_bowl_active(bowl_state):
+            print("No authorized pet detected, but a bowl is active; leaving lids to presence checks")
+            return
+
+        send_line(connection, "DENY")
+        print("UART => DENY")
+        report_to_cloud(
+            args,
+            {
+                "event_type": "denied",
+                "authorized": False,
+                "recognition_label": result["final_prediction"],
+                "notes": "No authorized pet identity detected after trigger",
+            },
+        )
+        return
+
+    side_state = bowl_state[command]
+    pet_name = result["final_prediction"].lower()
+
+    if side_state["status"] in {"pending", "open"}:
+        print(f"{command} bowl already {side_state['status']} for {pet_name}; not restarting")
+        return
+
+    send_line(connection, command)
+    side_state["status"] = "pending"
+    side_state["misses"] = 0
+    side_state["next_check_at"] = None
+    print(f"UART => {command} ({pet_name})")
+    report_to_cloud(
+        args,
+        {
+            "event_type": "authorized",
+            "authorized": True,
+            "recognition_label": pet_name,
+            "notes": f"Camera authorized {pet_name}; sent {command}",
+        },
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="UART bridge for trigger-driven pet identity recognition"
@@ -158,6 +431,30 @@ def main():
         help="Save burst frames and crops for debugging.",
     )
     parser.add_argument(
+        "--presence-check-interval",
+        type=float,
+        default=5.0,
+        help="Seconds between presence checks while a lid is open.",
+    )
+    parser.add_argument(
+        "--presence-frames",
+        type=int,
+        default=4,
+        help="Frames to evaluate during each open-lid presence check.",
+    )
+    parser.add_argument(
+        "--presence-min-accepted-frames",
+        type=int,
+        default=1,
+        help="Accepted frames needed to consider the owner still present.",
+    )
+    parser.add_argument(
+        "--presence-misses-to-close",
+        type=int,
+        default=2,
+        help="Consecutive missed presence checks before closing a lid.",
+    )
+    parser.add_argument(
         "--ingest-url",
         default=None,
         help="Supabase Edge Function URL. Defaults to PAWS_INGEST_URL.",
@@ -200,8 +497,22 @@ def main():
                 args,
                 {"motion_detected": False, "notes": "UART identity gate started"},
             )
+            bowl_state = {
+                "LEFT": {"status": "closed", "misses": 0, "next_check_at": None},
+                "RIGHT": {"status": "closed", "misses": 0, "next_check_at": None},
+            }
 
             while True:
+                run_due_presence_checks(
+                    connection=connection,
+                    bowl_state=bowl_state,
+                    args=args,
+                    camera=camera,
+                    yolo_model=yolo_model,
+                    recognizer=recognizer,
+                    profiles=profiles,
+                )
+
                 raw_message = connection.readline()
                 if not raw_message:
                     continue
@@ -212,44 +523,22 @@ def main():
 
                 print(f"UART <= {message}")
 
+                if message in OPENED_MESSAGES:
+                    mark_bowl_open(bowl_state, OPENED_MESSAGES[message], args)
+                    continue
+
                 if message != args.trigger_message:
                     print("Ignoring unsupported UART message")
                     continue
 
-                report_to_cloud(args, {"motion_detected": True})
-
-                command, result = detect_pet_identity(
+                handle_trigger(
+                    connection=connection,
+                    bowl_state=bowl_state,
+                    args=args,
                     camera=camera,
                     yolo_model=yolo_model,
                     recognizer=recognizer,
                     profiles=profiles,
-                )
-
-                if command is None:
-                    send_line(connection, "DENY")
-                    print("UART => DENY")
-                    report_to_cloud(
-                        args,
-                        {
-                            "event_type": "denied",
-                            "authorized": False,
-                            "recognition_label": result["final_prediction"],
-                            "notes": "No authorized pet identity detected after trigger",
-                        },
-                    )
-                    continue
-
-                pet_name = result["final_prediction"].lower()
-                send_line(connection, command)
-                print(f"UART => {command} ({pet_name})")
-                report_to_cloud(
-                    args,
-                    {
-                        "event_type": "authorized",
-                        "authorized": True,
-                        "recognition_label": pet_name,
-                        "notes": f"Camera authorized {pet_name}; sent {command}",
-                    },
                 )
     finally:
         camera.stop()

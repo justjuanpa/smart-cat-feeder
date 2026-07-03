@@ -86,6 +86,16 @@ void UART_task(void *parameters){
             load_cell_stop_all();
         }
 
+        if (strcmp(pi_command, "CLOSE_LEFT") == 0){
+            printf("Closing left lid by vision presence check\n");
+            load_cell_enable_left(false);
+        }
+
+        if (strcmp(pi_command, "CLOSE_RIGHT") == 0){
+            printf("Closing right lid by vision presence check\n");
+            load_cell_enable_right(false);
+        }
+
                 //the if statemments are seperate if statements instead of 
                 //if else statement because both pets can have the food dispense at the same time 
                 //if order to do this the if statements have to be different 

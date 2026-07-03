@@ -7,6 +7,7 @@
 #include "jay_hx711.h"
 #include "servo.h"
 #include "stepper.h"
+#include "uart_comm.h"
 
 #define HX711_DOUT_1 GPIO_NUM_5
 #define HX711_SCK_1 GPIO_NUM_6
@@ -198,6 +199,7 @@ static void update_left_dispense(bool ready, int grams)
     left_dispense_enabled = false;
     stepperEnableLeft(false);
     servoEnableLeft(true);
+    uart_comm_send_string("OPENED_LEFT\r\n");
 }
 
 static void update_right_dispense(bool ready, int grams)
@@ -223,6 +225,7 @@ static void update_right_dispense(bool ready, int grams)
     right_dispense_enabled = false;
     stepperEnableRight(false);
     servoEnableRight(true);
+    uart_comm_send_string("OPENED_RIGHT\r\n");
 }
 
 void load_cell_task(void *parameters){

@@ -456,7 +456,14 @@ def main():
     parser.add_argument(
         "--save-debug",
         action="store_true",
+        default=True,
         help="Save burst frames and crops for debugging.",
+    )
+    parser.add_argument(
+        "--no-save-debug",
+        action="store_false",
+        dest="save_debug",
+        help="Disable saving regular recognition frames and crops.",
     )
     parser.add_argument(
         "--presence-check-interval",

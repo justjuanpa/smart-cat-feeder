@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"name": "smart-cat-feeder",
+			"path": "../.."
+		},
+		{
+			"name": "feeder-device",
+			"path": "../../../../../Music/Documents/PlatformIO/Projects/feeder-device"
+		}
+	],
+	"settings": {}
+}

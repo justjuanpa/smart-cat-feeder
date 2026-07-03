@@ -246,7 +246,7 @@ void load_cell_task(void *parameters){
 
     bool ready_2 = false;
     int32_t raw_2 = 0;
-    int32_t offset_2 = 149623;
+    int32_t offset_2 = -379780;
     float scale_2 = 428; 
     float grams_2 = 0;
     int rounded_grams_2 = 0;

@@ -16,6 +16,7 @@
 
 
 #define PIR_PIN GPIO_NUM_4
+#define UART_RX_CHUNK_SIZE 64
 char pi_command[256];
 char esp_command[256] = "PIR TRIGGERED\r\n";
 
@@ -32,6 +33,67 @@ void IRAM_ATTR PIR_ISR(void *parameter){
     }
 }
 
+static void process_pi_command(char *command)
+{
+    trim_command(command);
+    if (command[0] == '\0'){
+        return;
+    }
+
+    printf("Recieved: %s\n", command);
+    if (strcmp(command, "RIGHT") == 0 || strcmp(command, "ALLOW") == 0 || strcmp(command, "OPEN") == 0){ //if the raspberry pi says to open the right side
+        vTaskDelay(pdMS_TO_TICKS(50));
+        printf("Starting right dispense cycle\n");
+        load_cell_enable_right(true);
+    }
+
+    if (strcmp(command, "LEFT") == 0){ //if the raspberry pi says to open the left side
+        printf("Starting left dispense cycle\n");
+        load_cell_enable_left(true);
+    }
+
+    if (strcmp(command, "DENY") == 0){
+        printf("Vision denied access; keeping servos closed\n");
+        load_cell_stop_all();
+    }
+
+    if (strcmp(command, "CLOSE_LEFT") == 0){
+        printf("Closing left lid by vision presence check\n");
+        load_cell_enable_left(false);
+    }
+
+    if (strcmp(command, "CLOSE_RIGHT") == 0){
+        printf("Closing right lid by vision presence check\n");
+        load_cell_enable_right(false);
+    }
+}
+
+static void append_uart_bytes(char *line_buffer, size_t *line_len, const char *chunk, int chunk_len)
+{
+    for (int i = 0; i < chunk_len; i++){
+        char current = chunk[i];
+
+        if (current == '\r' || current == '\n'){
+            if (*line_len > 0){
+                line_buffer[*line_len] = '\0';
+                process_pi_command(line_buffer);
+                *line_len = 0;
+            }
+            continue;
+        }
+
+        if (*line_len < sizeof(pi_command) - 1){
+            line_buffer[*line_len] = current;
+            (*line_len)++;
+            continue;
+        }
+
+        line_buffer[*line_len] = '\0';
+        printf("UART command too long, dropping: %s\n", line_buffer);
+        *line_len = 0;
+    }
+}
+
 void UART_task(void *parameters){   
     uart_comm_init(); //initalize UART
     //printf("ESP32 ready\r\n");
@@ -41,6 +103,8 @@ void UART_task(void *parameters){
 
     TickType_t currentTime = xTaskGetTickCount();
     TickType_t previousTime = 0; //prev 2 are for intrrupt timing
+    char rx_chunk[UART_RX_CHUNK_SIZE];
+    size_t line_len = 0;
 
     while(1) {
         if (xSemaphoreTake(xPIRSem, pdMS_TO_TICKS(20)) == pdTRUE){
@@ -57,44 +121,13 @@ void UART_task(void *parameters){
             }
         }
 
-        int len = uart_comm_read_string(pi_command, sizeof(pi_command) - 1, 1000);
+        int len = uart_comm_read_string(rx_chunk, sizeof(rx_chunk), 1000);
         if (len <= 0){
             vTaskDelay(pdMS_TO_TICKS(50));
             continue;
         }
 
-
-       trim_command(pi_command);
-        if (pi_command[0] == '\0'){
-            continue;
-        }
-
-        printf("Recieved: %s\n", pi_command);
-        if (strcmp(pi_command, "RIGHT") == 0 || strcmp(pi_command, "ALLOW") == 0 || strcmp(pi_command, "OPEN") == 0){ //if the raspberry pi says to open the right side
-            vTaskDelay(pdMS_TO_TICKS(50));
-            printf("Starting right dispense cycle\n");
-            load_cell_enable_right(true);
-        }
-
-        if (strcmp(pi_command, "LEFT") == 0){ //if the raspberry pi says to open the left side 
-            printf("Starting left dispense cycle\n");
-            load_cell_enable_left(true);
-        }
-
-        if (strcmp(pi_command, "DENY") == 0){
-            printf("Vision denied access; keeping servos closed\n");
-            load_cell_stop_all();
-        }
-
-        if (strcmp(pi_command, "CLOSE_LEFT") == 0){
-            printf("Closing left lid by vision presence check\n");
-            load_cell_enable_left(false);
-        }
-
-        if (strcmp(pi_command, "CLOSE_RIGHT") == 0){
-            printf("Closing right lid by vision presence check\n");
-            load_cell_enable_right(false);
-        }
+        append_uart_bytes(pi_command, &line_len, rx_chunk, len);
 
                 //the if statemments are seperate if statements instead of 
                 //if else statement because both pets can have the food dispense at the same time 

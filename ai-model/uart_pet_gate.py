@@ -243,11 +243,37 @@ def any_bowl_active(bowl_state):
     return any(state["status"] in {"pending", "open"} for state in bowl_state.values())
 
 
+def reset_stale_pending_bowls(bowl_state, args):
+    now = time.monotonic()
+
+    for side, state in bowl_state.items():
+        if state["status"] != "pending":
+            continue
+
+        pending_since = state.get("pending_since")
+        if pending_since is None:
+            state["pending_since"] = now
+            continue
+
+        if now - pending_since < args.pending_timeout:
+            continue
+
+        print(
+            f"{side} bowl pending for {now - pending_since:.1f}s "
+            f"without OPENED_{side}; resetting to closed"
+        )
+        state["status"] = "closed"
+        state["misses"] = 0
+        state["next_check_at"] = None
+        state["pending_since"] = None
+
+
 def mark_bowl_open(bowl_state, side, args):
     state = bowl_state[side]
     state["status"] = "open"
     state["misses"] = 0
     state["next_check_at"] = time.monotonic() + args.presence_check_interval
+    state["pending_since"] = None
     print(f"{side} bowl is open; next presence check in {args.presence_check_interval}s")
 
 
@@ -257,6 +283,7 @@ def close_bowl(connection, bowl_state, side):
     bowl_state[side]["status"] = "closed"
     bowl_state[side]["misses"] = 0
     bowl_state[side]["next_check_at"] = None
+    bowl_state[side]["pending_since"] = None
 
 
 def run_due_presence_checks(
@@ -355,6 +382,7 @@ def handle_trigger(
     side_state["status"] = "pending"
     side_state["misses"] = 0
     side_state["next_check_at"] = None
+    side_state["pending_since"] = time.monotonic()
     print(f"UART => {command} ({pet_name})")
     report_to_cloud(
         args,
@@ -455,6 +483,12 @@ def main():
         help="Consecutive missed presence checks before closing a lid.",
     )
     parser.add_argument(
+        "--pending-timeout",
+        type=float,
+        default=15.0,
+        help="Seconds to wait for OPENED_LEFT/RIGHT before allowing a command retry.",
+    )
+    parser.add_argument(
         "--ingest-url",
         default=None,
         help="Supabase Edge Function URL. Defaults to PAWS_INGEST_URL.",
@@ -498,11 +532,22 @@ def main():
                 {"motion_detected": False, "notes": "UART identity gate started"},
             )
             bowl_state = {
-                "LEFT": {"status": "closed", "misses": 0, "next_check_at": None},
-                "RIGHT": {"status": "closed", "misses": 0, "next_check_at": None},
+                "LEFT": {
+                    "status": "closed",
+                    "misses": 0,
+                    "next_check_at": None,
+                    "pending_since": None,
+                },
+                "RIGHT": {
+                    "status": "closed",
+                    "misses": 0,
+                    "next_check_at": None,
+                    "pending_since": None,
+                },
             }
 
             while True:
+                reset_stale_pending_bowls(bowl_state, args)
                 run_due_presence_checks(
                     connection=connection,
                     bowl_state=bowl_state,

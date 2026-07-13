@@ -25,14 +25,28 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Dashboard',
+          title: 'Home',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
         }}
       />
       <Tabs.Screen
-        name="explore"
+        name="activity"
         options={{
-          title: 'Manage',
+          title: 'Activity',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="clock.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="pets"
+        options={{
+          title: 'Pets',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="pawprint.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="device"
+        options={{
+          title: 'Device',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="slider.horizontal.3" color={color} />,
         }}
       />

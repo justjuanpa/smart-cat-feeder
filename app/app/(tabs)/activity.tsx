@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { usePawsRealtime } from '@/hooks/use-paws-realtime';
 import { useSupabaseSession } from '@/hooks/use-supabase-session';
 import {
   fetchFeedingEvents,
@@ -41,6 +42,11 @@ export default function ActivityScreen() {
       loadActivity();
     }
   }, [loadActivity, session?.user]);
+
+  usePawsRealtime({
+    userId: session?.user.id,
+    onActivityChange: loadActivity,
+  });
 
   async function logDemoEvent() {
     if (!session?.user || pets.length === 0) {

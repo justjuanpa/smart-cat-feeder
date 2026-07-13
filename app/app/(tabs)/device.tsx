@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { usePawsRealtime } from '@/hooks/use-paws-realtime';
 import { useSupabaseSession } from '@/hooks/use-supabase-session';
 import { fetchLatestDeviceStatus, type DeviceStatusRow } from '@/utils/paws-data';
 import { supabase } from '@/utils/supabase';
@@ -32,6 +33,11 @@ export default function DeviceScreen() {
       loadDevice();
     }
   }, [loadDevice, session?.user]);
+
+  usePawsRealtime({
+    userId: session?.user.id,
+    onDeviceStatusChange: loadDevice,
+  });
 
   async function signOut() {
     await supabase.auth.signOut();

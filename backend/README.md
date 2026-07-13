@@ -100,6 +100,8 @@ python ai-model/device-ingestion/paws_ingest_client.py \
 ## Local Files
 
 - `supabase/schema.sql`: database tables, indexes, and Row Level Security.
+- `supabase/enable-realtime.sql`: enables realtime app refreshes for
+  `device_status` and `feeding_events`.
 - `supabase/config.toml`: Supabase function settings.
 - `supabase/functions/ingest-device/index.ts`: secure device ingestion endpoint.
 - `supabase/provision-demo-device.sql`: helper SQL for creating a prototype

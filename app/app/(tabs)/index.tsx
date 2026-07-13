@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { usePawsRealtime } from '@/hooks/use-paws-realtime';
 import { useSupabaseSession } from '@/hooks/use-supabase-session';
 import {
   fetchFeedingEvents,
@@ -55,6 +56,12 @@ export default function DashboardScreen() {
 
     loadDashboard();
   }, [loadDashboard, session?.user, sessionLoading]);
+
+  usePawsRealtime({
+    userId: session?.user.id,
+    onActivityChange: loadDashboard,
+    onDeviceStatusChange: loadDashboard,
+  });
 
   const latestEvent = events[0];
   const title = pets.length > 0 ? pets.map((pet) => pet.name).join(' & ') : 'PAWS Feeder';

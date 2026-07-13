@@ -17,6 +17,7 @@ sys.path.append(str(DEVICE_INGESTION_DIR))
 sys.path.append(str(PET_RECOGNITION_DIR))
 
 from paws_ingest_client import post_ingest
+from embedded_data import parse_embedded_message
 import live_burst_recognition as burst_recognition
 
 VISION_VERSION = "uart-pet-gate-identity-v1"
@@ -275,6 +276,19 @@ def mark_bowl_open(bowl_state, side, args):
     state["next_check_at"] = time.monotonic() + args.presence_check_interval
     state["pending_since"] = None
     print(f"{side} bowl is open; next presence check in {args.presence_check_interval}s")
+    report_to_cloud(
+        args,
+        {
+            "event_type": "dispensed",
+            "authorized": True,
+            "recognition_label": SIDE_PETS[side],
+            "notes": f"{side} bowl opened after dispense target",
+            "raw_payload": {
+                "side": side,
+                "message": f"OPENED_{side}",
+            },
+        },
+    )
 
 
 def close_bowl(connection, bowl_state, side):
@@ -577,6 +591,12 @@ def main():
 
                 if message in OPENED_MESSAGES:
                     mark_bowl_open(bowl_state, OPENED_MESSAGES[message], args)
+                    continue
+
+                embedded_message = parse_embedded_message(message)
+                if embedded_message is not None:
+                    print(f"Telemetry <= {embedded_message['payload']}")
+                    report_to_cloud(args, embedded_message["payload"])
                     continue
 
                 if message != args.trigger_message:

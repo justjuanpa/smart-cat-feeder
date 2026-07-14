@@ -45,7 +45,8 @@ python ai-model/device-ingestion/paws_ingest_client.py \
   --confidence 0.91 \
   --authorized \
   --amount-grams 22 \
-  --current-weight-grams 118
+  --left-bowl-weight-grams 118 \
+  --right-bowl-weight-grams 94
 ```
 
 ## UART Bridge Integration
@@ -69,7 +70,7 @@ Cloud writes performed by `uart_pet_gate.py`:
 - no allowed pet detected: writes a `denied` feeding event
 - allowed pet detected: writes an `authorized` feeding event
 - `OPENED_LEFT` / `OPENED_RIGHT` received: writes a `dispensed` event
-- `Left Bowl Grams: N` / `Right Bowl Grams: N` received: updates device bowl weight
+- `Left Bowl Grams: N` / `Right Bowl Grams: N` received: updates the matching device bowl weight
 - `Left Access Lid: ...`, `Right Access Lid: ...`, and `Ledstrip: ...` are parsed as telemetry notes
 
 Motor and load-cell results should be added later as `dispensed` and

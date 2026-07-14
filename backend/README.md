@@ -81,7 +81,8 @@ Heartbeat/status only:
 
 ```bash
 python ai-model/device-ingestion/paws_ingest_client.py \
-  --current-weight-grams 0 \
+  --left-bowl-weight-grams 0 \
+  --right-bowl-weight-grams 0 \
   --motion-detected \
   --vision-version phone-camera-test
 ```
@@ -100,6 +101,8 @@ python ai-model/device-ingestion/paws_ingest_client.py \
 ## Local Files
 
 - `supabase/schema.sql`: database tables, indexes, and Row Level Security.
+- `supabase/add-bowl-weight-columns.sql`: one-time helper for adding separate
+  left/right bowl telemetry to an existing project.
 - `supabase/enable-realtime.sql`: enables realtime app refreshes for
   `device_status` and `feeding_events`.
 - `supabase/config.toml`: Supabase function settings.

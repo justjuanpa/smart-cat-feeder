@@ -1,8 +1,10 @@
 import { MaterialIcons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { usePawsRealtime } from '@/hooks/use-paws-realtime';
 import { useSupabaseSession } from '@/hooks/use-supabase-session';
 import {
   createDemoPetsAndSchedules,
@@ -14,7 +16,7 @@ import {
 } from '@/utils/paws-data';
 import { formatGrams, formatScheduleTime } from '@/utils/formatters';
 
-const petColors = ['#D97706', '#0F766E', '#155E75', '#7C3AED'];
+const petColors = ['#1D4FA3', '#5F7FBD', '#6B8FD6', '#8CA8E8'];
 
 export default function PetsScreen() {
   const { session } = useSupabaseSession();
@@ -49,6 +51,11 @@ export default function PetsScreen() {
       .catch((profileError: Error) => setError(profileError.message));
   }, [loadPetData, session?.user]);
 
+  usePawsRealtime({
+    userId: session?.user.id,
+    onPetChange: loadPetData,
+  });
+
   async function createDemoData() {
     if (!session?.user) {
       return;
@@ -78,7 +85,7 @@ export default function PetsScreen() {
             <Text style={styles.title}>Pets</Text>
           </View>
           <Pressable onPress={loadPetData} style={styles.iconButton}>
-            <MaterialIcons name="refresh" size={22} color="#0F766E" />
+            <MaterialIcons name="refresh" size={22} color="#1D4FA3" />
           </Pressable>
         </View>
 
@@ -109,7 +116,10 @@ export default function PetsScreen() {
             </Text>
           ) : (
             pets.map((pet, index) => (
-              <View key={pet.id} style={styles.petRow}>
+              <Pressable
+                key={pet.id}
+                onPress={() => router.push({ pathname: '/edit-pet', params: { id: pet.id } })}
+                style={styles.petRow}>
                 <View style={[styles.avatar, { backgroundColor: petColors[index % petColors.length] }]}>
                   <Text style={styles.initial}>{pet.name[0]}</Text>
                 </View>
@@ -121,7 +131,8 @@ export default function PetsScreen() {
                   <Text style={styles.amount}>{formatGrams(pet.daily_gram_limit)}/day</Text>
                   <Text style={styles.small}>{Math.round(pet.recognition_threshold * 100)}% threshold</Text>
                 </View>
-              </View>
+                <MaterialIcons name="chevron-right" size={22} color="#91A0B8" />
+              </Pressable>
             ))
           )}
         </View>
@@ -154,7 +165,7 @@ export default function PetsScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F6F2EA',
+    backgroundColor: '#F7FAFF',
   },
   container: {
     gap: 18,
@@ -167,19 +178,21 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   eyebrow: {
-    color: '#0F766E',
+    color: '#1D4FA3',
     fontSize: 13,
     fontWeight: '900',
     textTransform: 'uppercase',
   },
   title: {
-    color: '#172121',
+    color: '#10213F',
     fontSize: 34,
     fontWeight: '900',
   },
   iconButton: {
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
+    borderColor: '#D8E2F3',
+    borderWidth: 1,
     borderRadius: 8,
     height: 48,
     justifyContent: 'center',
@@ -187,6 +200,8 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: '#FFFFFF',
+    borderColor: '#D8E2F3',
+    borderWidth: 1,
     borderRadius: 8,
     gap: 14,
     padding: 16,
@@ -199,7 +214,7 @@ const styles = StyleSheet.create({
   },
   addButton: {
     alignItems: 'center',
-    backgroundColor: '#0F766E',
+    backgroundColor: '#1D4FA3',
     borderRadius: 8,
     height: 42,
     justifyContent: 'center',
@@ -209,13 +224,13 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   sectionTitle: {
-    color: '#172121',
+    color: '#10213F',
     fontSize: 21,
     fontWeight: '900',
   },
   petRow: {
     alignItems: 'center',
-    borderTopColor: '#EFE7DC',
+    borderTopColor: '#E6EDF8',
     borderTopWidth: 1,
     flexDirection: 'row',
     gap: 12,
@@ -242,20 +257,20 @@ const styles = StyleSheet.create({
   },
   scheduleRow: {
     alignItems: 'center',
-    borderTopColor: '#EFE7DC',
+    borderTopColor: '#E6EDF8',
     borderTopWidth: 1,
     flexDirection: 'row',
     gap: 12,
     paddingTop: 14,
   },
   timePill: {
-    backgroundColor: '#E6F4EF',
+    backgroundColor: '#EEF4FF',
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
   timeText: {
-    color: '#0F766E',
+    color: '#1D4FA3',
     fontSize: 13,
     fontWeight: '900',
   },
@@ -268,22 +283,22 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   cardTitle: {
-    color: '#172121',
+    color: '#10213F',
     fontSize: 16,
     fontWeight: '900',
   },
   muted: {
-    color: '#6B6259',
+    color: '#667085',
     fontSize: 14,
     lineHeight: 20,
   },
   amount: {
-    color: '#172121',
+    color: '#10213F',
     fontSize: 14,
     fontWeight: '900',
   },
   small: {
-    color: '#7C7066',
+    color: '#7A8BA6',
     fontSize: 12,
   },
 });

@@ -11,6 +11,15 @@ export type PetRow = {
   active: boolean;
 };
 
+export type PetUpdate = {
+  name: string;
+  species: string;
+  breed: string | null;
+  daily_gram_limit: number;
+  recognition_threshold: number;
+  margin_threshold: number;
+};
+
 export type FeedingScheduleRow = {
   id: string;
   pet_id: string;
@@ -39,6 +48,8 @@ export type DeviceStatusRow = {
   owner_id: string;
   online: boolean;
   current_weight_grams: number | null;
+  left_bowl_weight_grams: number | null;
+  right_bowl_weight_grams: number | null;
   last_motion_at: string | null;
   last_event_at: string | null;
   firmware_version: string | null;
@@ -106,6 +117,31 @@ export async function fetchPets() {
   return (data ?? []) as PetRow[];
 }
 
+export async function fetchPet(petId: string) {
+  const { data, error } = await supabase
+    .from('pets')
+    .select('id, name, species, breed, daily_gram_limit, recognition_threshold, margin_threshold, active')
+    .eq('id', petId)
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data as PetRow;
+}
+
+export async function updatePet(petId: string, values: PetUpdate) {
+  const { error } = await supabase
+    .from('pets')
+    .update(values)
+    .eq('id', petId);
+
+  if (error) {
+    throw error;
+  }
+}
+
 export async function fetchSchedules() {
   const { data, error } = await supabase
     .from('feeding_schedules')
@@ -146,7 +182,7 @@ export async function fetchLatestDeviceStatus() {
   const { data, error } = await supabase
     .from('device_status')
     .select(
-      'device_id, owner_id, online, current_weight_grams, last_motion_at, last_event_at, firmware_version, vision_version, updated_at, devices(name, status, last_seen_at)',
+      'device_id, owner_id, online, current_weight_grams, left_bowl_weight_grams, right_bowl_weight_grams, last_motion_at, last_event_at, firmware_version, vision_version, updated_at, devices(name, status, last_seen_at)',
     )
     .order('updated_at', { ascending: false })
     .limit(1);

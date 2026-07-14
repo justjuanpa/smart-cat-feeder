@@ -46,6 +46,12 @@ def build_payload(args):
     if args.current_weight_grams is not None:
         payload["current_weight_grams"] = args.current_weight_grams
 
+    if args.left_bowl_weight_grams is not None:
+        payload["left_bowl_weight_grams"] = args.left_bowl_weight_grams
+
+    if args.right_bowl_weight_grams is not None:
+        payload["right_bowl_weight_grams"] = args.right_bowl_weight_grams
+
     if args.motion_detected:
         payload["motion_detected"] = True
 
@@ -81,6 +87,8 @@ def main():
     parser.add_argument("--authorized", action="store_true", help="Whether access was allowed")
     parser.add_argument("--amount-grams", type=float, help="Food amount dispensed or consumed")
     parser.add_argument("--current-weight-grams", type=float, help="Current bowl/load-cell weight")
+    parser.add_argument("--left-bowl-weight-grams", type=float, help="Current left bowl/load-cell weight")
+    parser.add_argument("--right-bowl-weight-grams", type=float, help="Current right bowl/load-cell weight")
     parser.add_argument("--motion-detected", action="store_true", help="Whether motion was observed")
     parser.add_argument("--firmware-version", help="ESP32/feeder firmware version")
     parser.add_argument("--vision-version", help="Vision pipeline version")

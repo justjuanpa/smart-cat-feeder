@@ -86,6 +86,8 @@ create table if not exists public.device_status (
   owner_id uuid not null references public.profiles(id) on delete cascade,
   online boolean not null default false,
   current_weight_grams numeric(8, 2),
+  left_bowl_weight_grams numeric(8, 2),
+  right_bowl_weight_grams numeric(8, 2),
   last_motion_at timestamptz,
   last_event_at timestamptz,
   firmware_version text,

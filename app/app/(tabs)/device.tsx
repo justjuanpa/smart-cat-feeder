@@ -54,7 +54,7 @@ export default function DeviceScreen() {
             <Text style={styles.title}>Device</Text>
           </View>
           <Pressable onPress={loadDevice} style={styles.iconButton}>
-            <MaterialIcons name="refresh" size={22} color="#0F766E" />
+            <MaterialIcons name="refresh" size={22} color="#1D4FA3" />
           </Pressable>
         </View>
 
@@ -77,7 +77,8 @@ export default function DeviceScreen() {
         ) : null}
 
         <View style={styles.metricGrid}>
-          <Metric label="Bowl weight" value={formatGrams(deviceStatus?.current_weight_grams ?? null)} />
+          <Metric label="Left bowl" value={formatGrams(deviceStatus?.left_bowl_weight_grams ?? null)} />
+          <Metric label="Right bowl" value={formatGrams(deviceStatus?.right_bowl_weight_grams ?? null)} />
           <Metric label="Last motion" value={formatRelativeTime(deviceStatus?.last_motion_at ?? null)} />
           <Metric label="Last event" value={formatRelativeTime(deviceStatus?.last_event_at ?? null)} />
           <Metric label="Vision" value={deviceStatus?.vision_version ?? 'Unknown'} />
@@ -92,7 +93,7 @@ export default function DeviceScreen() {
         </View>
 
         <Pressable onPress={signOut} style={styles.secondaryButton}>
-          <MaterialIcons name="logout" size={20} color="#0F766E" />
+          <MaterialIcons name="logout" size={20} color="#1D4FA3" />
           <Text style={styles.secondaryButtonText}>Sign out</Text>
         </Pressable>
 
@@ -128,7 +129,7 @@ function SetupRow({ title, detail, done }: { title: string; detail: string; done
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F6F2EA',
+    backgroundColor: '#F7FAFF',
   },
   container: {
     gap: 18,
@@ -141,19 +142,21 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   eyebrow: {
-    color: '#0F766E',
+    color: '#1D4FA3',
     fontSize: 13,
     fontWeight: '900',
     textTransform: 'uppercase',
   },
   title: {
-    color: '#172121',
+    color: '#10213F',
     fontSize: 34,
     fontWeight: '900',
   },
   iconButton: {
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
+    borderColor: '#D8E2F3',
+    borderWidth: 1,
     borderRadius: 8,
     height: 48,
     justifyContent: 'center',
@@ -161,6 +164,8 @@ const styles = StyleSheet.create({
   },
   heroCard: {
     backgroundColor: '#FFFFFF',
+    borderColor: '#D8E2F3',
+    borderWidth: 1,
     borderRadius: 8,
     gap: 10,
     padding: 18,
@@ -177,12 +182,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#F59E0B',
   },
   heroLabel: {
-    color: '#6B6259',
+    color: '#667085',
     fontSize: 14,
     fontWeight: '700',
   },
   heroTitle: {
-    color: '#172121',
+    color: '#10213F',
     fontSize: 28,
     fontWeight: '900',
   },
@@ -193,6 +198,8 @@ const styles = StyleSheet.create({
   },
   metric: {
     backgroundColor: '#FFFFFF',
+    borderColor: '#D8E2F3',
+    borderWidth: 1,
     borderRadius: 8,
     flexBasis: '47%',
     flexGrow: 1,
@@ -200,22 +207,24 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   metricValue: {
-    color: '#172121',
+    color: '#10213F',
     fontSize: 17,
     fontWeight: '900',
   },
   metricLabel: {
-    color: '#7C7066',
+    color: '#7A8BA6',
     fontSize: 12,
   },
   card: {
     backgroundColor: '#FFFFFF',
+    borderColor: '#D8E2F3',
+    borderWidth: 1,
     borderRadius: 8,
     gap: 14,
     padding: 16,
   },
   sectionTitle: {
-    color: '#172121',
+    color: '#10213F',
     fontSize: 21,
     fontWeight: '900',
   },
@@ -243,7 +252,7 @@ const styles = StyleSheet.create({
   secondaryButton: {
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    borderColor: '#0F766E',
+    borderColor: '#BFD0EC',
     borderRadius: 8,
     borderWidth: 1,
     flexDirection: 'row',
@@ -252,7 +261,7 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   secondaryButtonText: {
-    color: '#0F766E',
+    color: '#1D4FA3',
     fontSize: 16,
     fontWeight: '900',
   },
@@ -265,12 +274,12 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   cardTitle: {
-    color: '#172121',
+    color: '#10213F',
     fontSize: 16,
     fontWeight: '900',
   },
   muted: {
-    color: '#6B6259',
+    color: '#667085',
     fontSize: 14,
     lineHeight: 20,
   },

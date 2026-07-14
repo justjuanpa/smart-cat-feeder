@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 import { supabase } from '@/utils/supabase';
 
@@ -13,12 +13,14 @@ export function usePawsRealtime({
   onActivityChange,
   onDeviceStatusChange,
 }: PawsRealtimeOptions) {
+  const channelIdRef = useRef(`paws-realtime:${Math.random().toString(36).slice(2)}`);
+
   useEffect(() => {
     if (!userId || (!onActivityChange && !onDeviceStatusChange)) {
       return;
     }
 
-    const channel = supabase.channel(`paws-realtime:${userId}`);
+    const channel = supabase.channel(`${channelIdRef.current}:${userId}`);
 
     if (onActivityChange) {
       channel.on(

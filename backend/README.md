@@ -103,6 +103,8 @@ python ai-model/device-ingestion/paws_ingest_client.py \
 - `supabase/schema.sql`: database tables, indexes, and Row Level Security.
 - `supabase/add-bowl-weight-columns.sql`: one-time helper for adding separate
   left/right bowl telemetry to an existing project.
+- `supabase/enable-pet-image-storage.sql`: one-time helper for allowing signed-in
+  users to upload private pet profile pictures.
 - `supabase/enable-realtime.sql`: enables realtime app refreshes for
   `device_status` and `feeding_events`.
 - `supabase/config.toml`: Supabase function settings.

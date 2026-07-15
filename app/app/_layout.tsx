@@ -18,6 +18,7 @@ export default function RootLayout() {
         <Stack.Screen name="auth" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="edit-pet" options={{ presentation: 'modal', title: 'Edit pet' }} />
+        <Stack.Screen name="edit-schedule" options={{ presentation: 'modal', title: 'Edit meal' }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
       </Stack>
       <StatusBar style="auto" />

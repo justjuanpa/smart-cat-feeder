@@ -1,3 +1,5 @@
+import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
@@ -13,18 +15,23 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { fetchPet, updatePet } from '@/utils/paws-data';
+import { useSupabaseSession } from '@/hooks/use-supabase-session';
+import { fetchPet, updatePet, uploadPetProfileImage } from '@/utils/paws-data';
 
 export default function EditPetScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
+  const { session } = useSupabaseSession();
   const [name, setName] = useState('');
   const [species, setSpecies] = useState('cat');
   const [breed, setBreed] = useState('');
   const [dailyLimit, setDailyLimit] = useState('');
   const [recognitionThreshold, setRecognitionThreshold] = useState('');
   const [marginThreshold, setMarginThreshold] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [photoLoadFailed, setPhotoLoadFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   useEffect(() => {
     if (!id) {
@@ -40,6 +47,8 @@ export default function EditPetScreen() {
         setDailyLimit(String(Number(pet.daily_gram_limit)));
         setRecognitionThreshold(String(Math.round(pet.recognition_threshold * 100)));
         setMarginThreshold(String(Math.round(pet.margin_threshold * 100)));
+        setAvatarUrl(pet.avatar_url ?? null);
+        setPhotoLoadFailed(false);
       })
       .catch((error: Error) => Alert.alert('Could not load pet', error.message))
       .finally(() => setLoading(false));
@@ -90,6 +99,46 @@ export default function EditPetScreen() {
     }
   }
 
+  async function chooseProfilePhoto() {
+    if (!id || !session?.user.id) {
+      return;
+    }
+
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!permission.granted) {
+      Alert.alert('Photo permission needed', 'Allow photo library access to upload a pet picture.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      allowsEditing: true,
+      aspect: [1, 1],
+      mediaTypes: ['images'],
+      quality: 0.85,
+    });
+
+    if (result.canceled || !result.assets[0]?.uri) {
+      return;
+    }
+
+    setUploadingPhoto(true);
+
+    try {
+      const uploaded = await uploadPetProfileImage({
+        ownerId: session.user.id,
+        petId: id,
+        imageUri: result.assets[0].uri,
+      });
+      setAvatarUrl(uploaded.avatar_url);
+      setPhotoLoadFailed(false);
+    } catch (error) {
+      Alert.alert('Could not upload photo', error instanceof Error ? error.message : 'Try again in a moment.');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
@@ -105,6 +154,33 @@ export default function EditPetScreen() {
             <Text style={styles.copy}>
               Update the profile details used by the mobile app and feeding rules.
             </Text>
+          </View>
+
+          <View style={styles.photoCard}>
+            <View style={styles.photoPreview}>
+              {avatarUrl && !photoLoadFailed ? (
+                <Image
+                  contentFit="cover"
+                  onError={() => setPhotoLoadFailed(true)}
+                  source={{ uri: avatarUrl }}
+                  style={styles.photo}
+                />
+              ) : (
+                <Text style={styles.photoInitial}>{name.trim()[0] ?? '?'}</Text>
+              )}
+            </View>
+            <View style={styles.photoText}>
+              <Text style={styles.cardTitle}>Profile picture</Text>
+              <Text style={styles.copy}>Choose a clear face photo from your phone.</Text>
+              <Pressable
+                disabled={loading || uploadingPhoto}
+                onPress={chooseProfilePhoto}
+                style={[styles.photoButton, (loading || uploadingPhoto) && styles.disabledButton]}>
+                <Text style={styles.photoButtonText}>
+                  {uploadingPhoto ? 'Uploading...' : avatarUrl ? 'Change photo' : 'Upload photo'}
+                </Text>
+              </Pressable>
+            </View>
           </View>
 
           <View style={styles.form}>
@@ -214,6 +290,53 @@ const styles = StyleSheet.create({
     gap: 14,
     padding: 16,
   },
+  photoCard: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#D8E2F3',
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 14,
+    padding: 16,
+  },
+  photoPreview: {
+    alignItems: 'center',
+    backgroundColor: '#EEF4FF',
+    borderRadius: 8,
+    height: 82,
+    justifyContent: 'center',
+    overflow: 'hidden',
+    width: 82,
+  },
+  photo: {
+    height: '100%',
+    width: '100%',
+  },
+  photoInitial: {
+    color: '#1D4FA3',
+    fontSize: 34,
+    fontWeight: '900',
+  },
+  photoText: {
+    flex: 1,
+    gap: 8,
+  },
+  photoButton: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: '#EEF4FF',
+    borderColor: '#BFD0EC',
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  photoButtonText: {
+    color: '#1D4FA3',
+    fontSize: 14,
+    fontWeight: '900',
+  },
   inputGroup: {
     gap: 6,
   },
@@ -253,6 +376,11 @@ const styles = StyleSheet.create({
   },
   secondaryButtonText: {
     color: '#1D4FA3',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  cardTitle: {
+    color: '#10213F',
     fontSize: 16,
     fontWeight: '900',
   },

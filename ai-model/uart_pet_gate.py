@@ -23,12 +23,12 @@ import live_burst_recognition as burst_recognition
 VISION_VERSION = "uart-pet-gate-identity-v1"
 DEFAULT_TRIGGER_MESSAGE = "PIR TRIGGERED"
 PET_COMMANDS = {
-    "milo": "LEFT",
-    "mimi": "RIGHT",
+    "mimi": "LEFT",
+    "milo": "RIGHT",
 }
 SIDE_PETS = {
-    "LEFT": "milo",
-    "RIGHT": "mimi",
+    "LEFT": "mimi",
+    "RIGHT": "milo",
 }
 CLOSE_COMMANDS = {
     "LEFT": "CLOSE_LEFT",
@@ -115,13 +115,13 @@ def detect_pet_identity(camera, yolo_model, recognizer, profiles):
 def side_for_bbox(bbox, image_width):
     x1, _, x2, _ = bbox
     center_x = (x1 + x2) / 2
-    return "LEFT" if center_x < image_width / 2 else "RIGHT"
+    return "RIGHT" if center_x < image_width / 2 else "LEFT"
 
 
 def crop_side_roi(frame, side):
     midpoint = frame.shape[1] // 2
 
-    if side == "LEFT":
+    if side == "RIGHT":
         return frame[:, :midpoint]
 
     return frame[:, midpoint:]

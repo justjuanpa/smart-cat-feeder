@@ -1,5 +1,6 @@
 #ifndef LEDSTRIPNEW_H
 #define LEDSTRIPNEW_H
+#include <stdbool.h>
 
 void LUX_to_LED_task(void *parameters);
 void lux_data_task(void *parameters);

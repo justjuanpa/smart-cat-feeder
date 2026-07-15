@@ -6,6 +6,8 @@
 #define STEPPER_H
 
 #include <stdbool.h>
+#include "esp_err.h"
+#include "freertos/FreeRTOS.h"
 
 //6/6/26 note:
 //hey future jay the code for the stepper is almost done 

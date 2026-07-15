@@ -3,7 +3,14 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-esp_err_t uart_comm_init(void){
+static bool uart_comm_initialized = false;
+
+esp_err_t uart_comm_init(void)
+{
+    if (uart_comm_initialized) {
+        return ESP_OK;
+    }
+
     uart_config_t uart_config = {
         .baud_rate = UART_COMM_BAUD_RATE,
         .data_bits = UART_DATA_8_BITS,
@@ -13,37 +20,41 @@ esp_err_t uart_comm_init(void){
         .source_clk = UART_SCLK_DEFAULT
     };
 
-    
-    // If already installed, remove it first
-    uart_driver_delete(UART_COMM_PORT);
-
     esp_err_t ret;
+
     ret = uart_param_config(UART_COMM_PORT, &uart_config);
-    if (ret != ESP_OK){
-        return ret; 
+    if (ret != ESP_OK) {
+        return ret;
     }
 
-    ret = uart_set_pin (UART_COMM_PORT,
-                            UART_COMM_TX_PIN,
-                            UART_COMM_RX_PIN,
-                            UART_PIN_NO_CHANGE,
-                        UART_PIN_NO_CHANGE);
+    ret = uart_set_pin(
+        UART_COMM_PORT,
+        UART_COMM_TX_PIN,
+        UART_COMM_RX_PIN,
+        UART_PIN_NO_CHANGE,
+        UART_PIN_NO_CHANGE
+    );
 
     if (ret != ESP_OK) {
         return ret;
     }
 
-    ret = uart_driver_install(UART_COMM_PORT,
-                    UART_COMM_BUF_SIZE,
-                    UART_COMM_BUF_SIZE,
-                0,
+    if (!uart_is_driver_installed(UART_COMM_PORT)) {
+        ret = uart_driver_install(
+            UART_COMM_PORT,
+            UART_COMM_BUF_SIZE,
+            UART_COMM_BUF_SIZE,
+            0,
             NULL,
-        0);
+            0
+        );
 
-    if (ret != ESP_OK) {
-        return ret; 
+        if (ret != ESP_OK) {
+            return ret;
+        }
     }
 
+    uart_comm_initialized = true;
     return ESP_OK;
 }
 
@@ -61,7 +72,6 @@ esp_err_t uart_comm_send_bytes(const uint8_t *data, size_t len)
 
     return ESP_OK;
 }
-
 
 
 esp_err_t uart_comm_send_string(const char *str)
@@ -96,7 +106,7 @@ int uart_comm_read_bytes(uint8_t *buffer, size_t max_len, uint32_t timeout_ms)
     return len; 
 }
 
-esp_err_t uart_comm_recieve_bytes(const uint8_t *data, size_t len)
+esp_err_t uart_comm_recieve_bytes( uint8_t *data, size_t len)
 {
     if (data == NULL || len == 0){
         return ESP_ERR_INVALID_ARG;

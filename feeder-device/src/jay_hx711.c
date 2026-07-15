@@ -9,10 +9,10 @@
 #include "stepper.h"
 #include "uart_comm.h"
 
-#define HX711_DOUT_1 GPIO_NUM_5
-#define HX711_SCK_1 GPIO_NUM_6
-#define HX711_DOUT_2 GPIO_NUM_7
-#define HX711_SCK_2 GPIO_NUM_8
+#define HX711_DOUT_1 GPIO_NUM_5 //servo onto of the servo 
+#define HX711_SCK_1 GPIO_NUM_6 //left servo
+#define HX711_DOUT_2 GPIO_NUM_7 //load cell on the bottom 
+#define HX711_SCK_2 GPIO_NUM_8 //right load cell 
 
 #define LOAD_CELL_SAMPLES 15
 #define LEFT_TARGET_GRAMS 5
@@ -20,6 +20,9 @@
 
 static volatile bool left_dispense_enabled = false;
 static volatile bool right_dispense_enabled = false;
+
+int gramDataL;
+int gramDateR;
 
 
 
@@ -231,8 +234,8 @@ static void update_right_dispense(bool ready, int grams)
 void load_cell_task(void *parameters){
     bool ready_1 = false;
     int32_t raw_1 = 0;
-    int32_t offset_1 = 148603;
-    float scale_1 = 428; 
+    int32_t offset_1 = -147637;
+    float scale_1 = -428; 
     float grams_1 = 0;
     int rounded_grams_1 = 0;
 
@@ -246,8 +249,8 @@ void load_cell_task(void *parameters){
 
     bool ready_2 = false;
     int32_t raw_2 = 0;
-    int32_t offset_2 = -379780;
-    float scale_2 = 428; 
+    int32_t offset_2 = 379963;
+    float scale_2 = -428; 
     float grams_2 = 0;
     int rounded_grams_2 = 0;
 
@@ -262,7 +265,8 @@ void load_cell_task(void *parameters){
     step_init(); //initalize stepper
     
     //xTaskCreatePinnedToCore(stepper_stop_task, "rotate the steppper backwards", 1024,NULL, 4,NULL,0); //servo and stepper will be on the same core 
-    xTaskCreatePinnedToCore(stepper_task, "rotate the steppper", 2048,NULL, 4,NULL,0); //servo and stepper will be on the same core 
+    xTaskCreatePinnedToCore(stepper_task, "rotate the steppper", 4096,NULL, 4,NULL,0); //servo and stepper will be on the same core 
+        //xTaskCreatePinnedToCore(servoRotate_task,"rotate the servo back a forth", 32768,NULL, 4,NULL,0); //servo and stepper will be on the same core 
 
 
 
@@ -275,11 +279,13 @@ void load_cell_task(void *parameters){
             grams_1 = (raw_1 - offset_1) / scale_1;
             rounded_grams_1 = (int)(grams_1 + 0.5f);
             printf("Raw = %ld, Weight = %d g for left load cell\n", (long)raw_1, rounded_grams_1);
+        }else{
+            printf("L\n");
         }
 
         if (ready_2){
             hx711_read_average(&assign_2, LOAD_CELL_SAMPLES, &raw_2);
-            grams_2 = (raw_2 - offset_2) / scale_2;
+            grams_2 = (raw_2-offset_2) / scale_2;
             rounded_grams_2 = (int)(grams_2 + 0.5f);
             printf("Raw = %ld, Weight = %d g for right load cell\n", (long)raw_2, rounded_grams_2);
         }
@@ -287,7 +293,19 @@ void load_cell_task(void *parameters){
         update_left_dispense(ready_1, rounded_grams_1);
         update_right_dispense(ready_2, rounded_grams_2);
 
+        gramDataL = rounded_grams_1;
+        gramDateR = rounded_grams_2;
+
         vTaskDelay(pdMS_TO_TICKS(500));
     }
 
+}
+
+//to send weight data via uart 
+int leftGramData(void){
+    return gramDataL;
+}
+
+int rightGramData(void){
+    return gramDateR;
 }

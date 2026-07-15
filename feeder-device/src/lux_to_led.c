@@ -7,12 +7,16 @@
 #include "esp_log.h"
 #include "sdkconfig.h"
 #include "esp_ws28xx.h"
+#include "lux_to_led.h"
+#include "math.h"
 
 #define I2C_MASTER_TIMEOUT_MS 1000
-#define SDA_PIN GPIO_NUM_47
-#define SCL_PIN GPIO_NUM_48
-#define LED_PIN GPIO_NUM_42
-#define LED_NUM 144
+#define SDA_PIN GPIO_NUM_1
+#define SCL_PIN GPIO_NUM_2
+#define LED_PIN GPIO_NUM_21
+#define LED_NUM 35
+#define LED_NUM_W_END 31
+#define LED_NUM_W_STR 4
 #define TSL2591_ADDR     0x29
 
 // TSL2591 command byte parts
@@ -48,6 +52,20 @@ static const char *TAG = "TSL2591";
 TaskHandle_t TSL2591ReadHandle = NULL;
 
 CRGB* ws2812_buffer;
+int match = 0;
+//match codes 
+//0 = off/idle can lowkey make them with in idle 
+//1 = match turn led green
+//2 = not a match turn led red 
+//then it should turn back to white to idle 
+int led_val = 0;
+//if led_val 0 lux is high
+//led_val 25 
+//led_val 50
+//led_val 75 
+//if led_val 100 lux is low
+
+volatile bool pir_on_off;
 
 //Function to intialize I2C bus 
 static void i2c_master_init_bus(i2c_master_bus_handle_t *bus_handle){
@@ -70,6 +88,44 @@ static void i2c_master_init_handle(i2c_master_bus_handle_t *bus_handle, i2c_mast
         .scl_speed_hz = 400000,
     };
     ESP_ERROR_CHECK(i2c_master_bus_add_device(*bus_handle, &dev_config, dev_handle));
+}
+
+static esp_err_t read_bytes_i2c(
+    i2c_master_dev_handle_t dev_handle,
+    uint8_t reg_addr,
+    uint8_t *data,
+    size_t len
+)
+{
+    uint8_t reg = TSL2591_COMMAND | reg_addr;
+
+    return i2c_master_transmit_receive(
+        dev_handle,
+        &reg,
+        1,
+        data,
+        len,
+        I2C_MASTER_TIMEOUT_MS
+    );
+}
+
+static esp_err_t write_byte_i2c(
+    i2c_master_dev_handle_t dev_handle,
+    uint8_t reg_addr,
+    uint8_t data
+)
+{
+    uint8_t write_buf[2] = {
+        TSL2591_COMMAND | reg_addr,
+        data
+    };
+
+    return i2c_master_transmit(
+        dev_handle,
+        write_buf,
+        sizeof(write_buf),
+        I2C_MASTER_TIMEOUT_MS
+    );
 }
 
 void check_address_task(void *arg){
@@ -112,7 +168,78 @@ static float calculate_lux(uint16_t ch0, uint16_t ch1, float atime_ms, float aga
     return lux;
 }
 
-void read_TSL2591(void *arg){
+void match_val_receive(int val){
+    match = val; 
+}
+ 
+
+void detection_led_task(void *para)
+{
+    ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_init(LED_PIN, WS2812B, LED_NUM, &ws2812_buffer));
+
+    while (1) {
+
+        CRGB detection_color;
+
+        if (match == 1) { //match deteched 
+            detection_color = (CRGB){
+                .r = 0,
+                .g = 50,
+                .b = 0
+            };
+        }
+        else if (match == 2){ //false match
+              detection_color = (CRGB){
+                .r = 50,
+                .g = 0,
+                .b = 0
+            };
+        }
+         else { //idle
+            detection_color = (CRGB){
+                .r = 50,
+                .g = 50,
+                .b = 50
+            };
+        }
+
+        // Turn all detection LEDs on.
+        for (int i = 0; i < LED_NUM_W_STR; i++) {
+            ws2812_buffer[i] = detection_color;
+        }
+
+        for (int i = LED_NUM_W_END; i < LED_NUM; i++) {
+            ws2812_buffer[i] = detection_color;
+        }
+
+        ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+
+        vTaskDelay(pdMS_TO_TICKS(500));
+
+        // Turn all detection LEDs off.
+        for (int i = 0; i < LED_NUM_W_STR; i++) {
+            ws2812_buffer[i] = (CRGB){
+                .r = 0,
+                .g = 0,
+                .b = 0
+            };
+        }
+
+        for (int i = LED_NUM_W_END; i < LED_NUM; i++) {
+            ws2812_buffer[i] = (CRGB){
+                .r = 0,
+                .g = 0,
+                .b = 0
+            };
+        }
+
+        ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+void lux_data_task(void *arg){
     i2c_master_bus_handle_t bus_handle;
     i2c_master_dev_handle_t dev_handle;
 
@@ -169,52 +296,71 @@ void read_TSL2591(void *arg){
 
         lux = calculate_lux(ch0, ch1, atime_ms, again);
 
-        //printf("CH0: %u, CH1: %u, Lux: %.2f\n", ch0, ch1, lux);
+    printf("CH0: %u, CH1: %u, Lux: %.2f\n", ch0, ch1, lux);
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 
-void LUX_to_LED(void *para){ //brightness next lux
+void PirLedDoor(bool val){
+    pir_on_off = val; 
+}
+void LUX_to_LED_task(void *para){ //brightness next lux
     ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_init(LED_PIN, WS2812B, LED_NUM, &ws2812_buffer));
 
     while (1) {
-        if (lux >= 90){
-            for (int i = 0; i < LED_NUM; i++){
+       //if (pir_on_off){ //true on 
+         if (lux >= 100){
+            for (int i = LED_NUM_W_STR; i < LED_NUM_W_END; i++){
                 ws2812_buffer[i] = (CRGB) {.r=0, .g=0, .b=0};
             }
+            led_val = 0; //the room is well lit
             ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
-       }
-        else if (lux <= 90 && lux >= 75){
-            for (int i = 0; i < LED_NUM; i++){
+        }
+        else if (lux <= 100 && lux >= 85){
+            for (int i = LED_NUM_W_STR; i < LED_NUM_W_END; i++){
                 ws2812_buffer[i] = (CRGB) {.r=25, .g=25, .b=25};
             }
+            led_val = 25;
             ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
         }
-        else if (lux <= 75 && lux >= 50){
-            for (int i = 0; i < LED_NUM; i++){
+        else if (lux <= 85 && lux >= 60){
+            for (int i = LED_NUM_W_STR; i < LED_NUM_W_END; i++){
                 ws2812_buffer[i] = (CRGB) {.r=50, .g=50, .b=50};
             }
+            led_val = 50;
             ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
         }
-        else if (lux <= 50 && lux >= 25){
-            for (int i = 0; i < LED_NUM; i++){
+        else if (lux <= 60 && lux >= 35){
+            for (int i = LED_NUM_W_STR; i < LED_NUM_W_END; i++){
                 ws2812_buffer[i] = (CRGB) {.r=75, .g=75, .b=75};
             }
+            led_val = 75;
             ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update()); 
         }
-        else if (lux <= 25 && lux >= 0){
-            for (int i = 0; i < LED_NUM; i++){
+        else if (lux <= 35 && lux >= 0){
+            for (int i = LED_NUM_W_STR; i < LED_NUM_W_END; i++){
                 ws2812_buffer[i] = (CRGB) {.r=100, .g=100, .b=100};
             }
+            led_val = 100;
             ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
         }
+       //}
+        // else {
+        //     for (int i = LED_NUM_W_STR; i < LED_NUM_W_END; i++) {
+        //         ws2812_buffer[i] = (CRGB){.r = 0, .g = 0, .b = 0};
+        //     }
 
-    }
+        //     led_val = 0;
+        //     ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+        // }
+
+                    vTaskDelay(pdMS_TO_TICKS(100));
+
+    } 
+   
     
 }
 
-
-void app_main(void){
-    xTaskCreatePinnedToCore(LUX_to_LED, "LED Task", 4096, NULL, 10, NULL, 1); //Core 1
-    xTaskCreatePinnedToCore(read_TSL2591, "TSL2591 Read", 4096, NULL, 10, &TSL2591ReadHandle, 1); //Core 1
+int ledStats(void){
+    return led_val;
 }

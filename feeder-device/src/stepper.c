@@ -4,6 +4,8 @@
 #include "driver/gpio.h"
 #include "stepper.h"
 #include "esp_err.h"
+#include "freertos/semphr.h"
+
 
 #define RIGHTSTEP_1_PIN GPIO_NUM_9
 #define RIGHTSTEP_2_PIN GPIO_NUM_10
@@ -14,6 +16,46 @@
 #define LEFTSTEP_2_PIN GPIO_NUM_14
 #define LEFTSTEP_3_PIN GPIO_NUM_15
 #define LEFTSTEP_4_PIN GPIO_NUM_16
+#define RSTEP_PIN GPIO_NUM_47
+#define LSTEP_PIN GPIO_NUM_48
+
+volatile bool manual_overide_r = false;
+volatile bool manual_overide_l = false;
+static SemaphoreHandle_t xRStepSem; 
+static SemaphoreHandle_t xLStepSem;
+
+
+static SemaphoreHandle_t xStepRMutex = NULL; //hand of access either to the bttn intrupt or stepper task
+esp_err_t rightStepTake(TickType_t wait_time)
+{
+    return xSemaphoreTake(xStepRMutex, wait_time);
+}
+
+void rightStepGive(void)
+{
+    printf("i gave it up - rightsteptask\n");
+                //vTaskDelay(pdMS_TO_TICKS(1000));
+
+    xSemaphoreGive(xStepRMutex);
+}
+
+//stepperbttnright ISR
+void IRAM_ATTR RSTEPBTTN_ISR(void *parameter){
+    BaseType_t xHigherPrioTaskWoken = pdFALSE;
+    xSemaphoreGiveFromISR(xRStepSem, &xHigherPrioTaskWoken);
+    if (xHigherPrioTaskWoken == pdTRUE){
+        portYIELD_FROM_ISR();
+    }
+}
+
+//stepperbttnleft ISR
+void IRAM_ATTR LSTEPBTTN_ISR(void *parameter){
+    BaseType_t xHigherPrioTaskWoken = pdFALSE;
+    xSemaphoreGiveFromISR(xLStepSem, &xHigherPrioTaskWoken);
+    if (xHigherPrioTaskWoken == pdTRUE){
+        portYIELD_FROM_ISR();
+    }
+}
 
 
 void step_init(){
@@ -27,6 +69,7 @@ void step_init(){
     gpio_set_direction(RIGHTSTEP_3_PIN, GPIO_MODE_OUTPUT);
     gpio_set_direction(RIGHTSTEP_4_PIN, GPIO_MODE_OUTPUT);
 }
+
 
 volatile bool enable_left;
 bool clean_once_left = true;
@@ -46,57 +89,45 @@ void stepper_spin_task (void *parameters){
     //printf("here\n");
     //while (1){
         //printf("hey now here \n");
+        step_init();
 
-    while(1) {//for (int i = 0; i < 200; i++){
-                //printf("hey now here \n");
-        gpio_set_level(LEFTSTEP_1_PIN, 1);
-        gpio_set_level(LEFTSTEP_2_PIN, 0);
-        gpio_set_level(LEFTSTEP_3_PIN, 0);
-        gpio_set_level(LEFTSTEP_4_PIN, 0);
-        vTaskDelay(pdMS_TO_TICKS(10));
+    while(1) {
+        
+        if ( manual_overide_r == false) {
+            printf("yessir\n");
+            gpio_set_level(RIGHTSTEP_1_PIN, 1);
+            gpio_set_level(RIGHTSTEP_2_PIN, 0);
+            gpio_set_level(RIGHTSTEP_3_PIN, 0);
+            gpio_set_level(RIGHTSTEP_4_PIN, 0);
+            vTaskDelay(pdMS_TO_TICKS(10));
 
-        gpio_set_level(LEFTSTEP_1_PIN, 0);
-        gpio_set_level(LEFTSTEP_2_PIN, 1);
-        gpio_set_level(LEFTSTEP_3_PIN, 0);
-        gpio_set_level(LEFTSTEP_4_PIN, 0);
-        vTaskDelay(pdMS_TO_TICKS(10));
+            gpio_set_level(RIGHTSTEP_1_PIN, 0);
+            gpio_set_level(RIGHTSTEP_2_PIN, 1);
+            gpio_set_level(RIGHTSTEP_3_PIN, 0);
+            gpio_set_level(RIGHTSTEP_4_PIN, 0);
+            vTaskDelay(pdMS_TO_TICKS(10));
 
-        gpio_set_level(LEFTSTEP_1_PIN, 0);
-        gpio_set_level(LEFTSTEP_2_PIN, 0);
-        gpio_set_level(LEFTSTEP_3_PIN, 1);
-        gpio_set_level(LEFTSTEP_4_PIN, 0);
-        vTaskDelay(pdMS_TO_TICKS(10));
+            gpio_set_level(RIGHTSTEP_1_PIN, 0);
+            gpio_set_level(RIGHTSTEP_2_PIN, 0);
+            gpio_set_level(RIGHTSTEP_3_PIN, 1);
+            gpio_set_level(RIGHTSTEP_4_PIN, 0);
+            vTaskDelay(pdMS_TO_TICKS(10));
 
-        gpio_set_level(LEFTSTEP_1_PIN, 0);
-        gpio_set_level(LEFTSTEP_2_PIN, 0);
-        gpio_set_level(LEFTSTEP_3_PIN, 0);
-        gpio_set_level(LEFTSTEP_4_PIN, 1);
-        vTaskDelay(pdMS_TO_TICKS(10));
+            gpio_set_level(RIGHTSTEP_1_PIN, 0);
+            gpio_set_level(RIGHTSTEP_2_PIN, 0);
+            gpio_set_level(RIGHTSTEP_3_PIN, 0);
+            gpio_set_level(RIGHTSTEP_4_PIN, 1);
+            vTaskDelay(pdMS_TO_TICKS(10));
+            rightStepGive();
+        } else {
+                        printf("nosir\n");
+    //                     gpio_set_level(RIGHTSTEP_1_PIN, 0);
+    // gpio_set_level(RIGHTSTEP_2_PIN, 0);
+    // gpio_set_level(RIGHTSTEP_3_PIN, 0);
+    // gpio_set_level(RIGHTSTEP_4_PIN, 0);
 
+        }
 
-        gpio_set_level(RIGHTSTEP_1_PIN, 1);
-        gpio_set_level(RIGHTSTEP_2_PIN, 0);
-        gpio_set_level(RIGHTSTEP_3_PIN, 0);
-        gpio_set_level(RIGHTSTEP_4_PIN, 0);
-        vTaskDelay(pdMS_TO_TICKS(10));
-
-        gpio_set_level(RIGHTSTEP_1_PIN, 0);
-        gpio_set_level(RIGHTSTEP_2_PIN, 1);
-        gpio_set_level(RIGHTSTEP_3_PIN, 0);
-        gpio_set_level(RIGHTSTEP_4_PIN, 0);
-        vTaskDelay(pdMS_TO_TICKS(10));
-
-        gpio_set_level(RIGHTSTEP_1_PIN, 0);
-        gpio_set_level(RIGHTSTEP_2_PIN, 0);
-        gpio_set_level(RIGHTSTEP_3_PIN, 1);
-        gpio_set_level(RIGHTSTEP_4_PIN, 0);
-        vTaskDelay(pdMS_TO_TICKS(10));
-
-        gpio_set_level(RIGHTSTEP_1_PIN, 0);
-        gpio_set_level(RIGHTSTEP_2_PIN, 0);
-        gpio_set_level(RIGHTSTEP_3_PIN, 0);
-        gpio_set_level(RIGHTSTEP_4_PIN, 1);
-        vTaskDelay(pdMS_TO_TICKS(10));
     }
 
     //vTaskDelay(pdMS_TO_TICKS(1000));
@@ -114,6 +145,196 @@ void stepper_spin_task (void *parameters){
     // vTaskDelay(pdMS_TO_TICKS(10));
 
     vTaskDelete(NULL);
+}
+
+void manual_right_stepper_task(void *para){
+    TickType_t currentTime = xTaskGetTickCount();
+    TickType_t previousTime = 0; //prev 2 are for intrrupt timing
+
+    xRStepSem = xSemaphoreCreateBinary();
+    assert(xRStepSem);
+    gpio_install_isr_service(0);
+    printf("button configuration done\n");
+    gpio_reset_pin(RSTEP_PIN);
+    gpio_set_direction(RSTEP_PIN, GPIO_MODE_INPUT); //PIR Sensor will input a signal
+    gpio_pullup_en(RSTEP_PIN);
+    gpio_set_intr_type(RSTEP_PIN, GPIO_INTR_NEGEDGE);
+    printf("we are getting stuck\n");
+    gpio_isr_handler_add(RSTEP_PIN,RSTEPBTTN_ISR, NULL);
+    printf("we made it here\n");
+
+    while (1)
+    {
+        if (xSemaphoreTake(xRStepSem,  portMAX_DELAY) == pdTRUE){
+                        manual_overide_r = true;
+
+                printf("Button was pressed\n");
+                previousTime = currentTime;
+                currentTime = xTaskGetTickCount();
+                // printf("prev: %lu & curr: %lu \n", previousTime, currentTime);
+                if ((currentTime-previousTime) > 25){ //if the pir sensor interrupt went of time do uart stuff
+                    while(gpio_get_level(RSTEP_PIN) == 0){
+                        printf("button is pressed mane forward direction\n");
+                        gpio_set_level(RIGHTSTEP_1_PIN, 1);
+                        gpio_set_level(RIGHTSTEP_2_PIN, 0);
+                        gpio_set_level(RIGHTSTEP_3_PIN, 0);
+                        gpio_set_level(RIGHTSTEP_4_PIN, 0);
+                        vTaskDelay(pdMS_TO_TICKS(10));
+
+                        
+                        gpio_set_level(RIGHTSTEP_1_PIN, 0);
+                        gpio_set_level(RIGHTSTEP_2_PIN, 1);
+                        gpio_set_level(RIGHTSTEP_3_PIN, 0);
+                        gpio_set_level(RIGHTSTEP_4_PIN, 0);
+                        vTaskDelay(pdMS_TO_TICKS(10));
+
+                        gpio_set_level(RIGHTSTEP_1_PIN, 0);
+                        gpio_set_level(RIGHTSTEP_2_PIN, 0);
+                        gpio_set_level(RIGHTSTEP_3_PIN, 1);
+                        gpio_set_level(RIGHTSTEP_4_PIN, 0);
+                        vTaskDelay(pdMS_TO_TICKS(10));
+
+                        gpio_set_level(RIGHTSTEP_1_PIN, 0);
+                        gpio_set_level(RIGHTSTEP_2_PIN, 0);
+                        gpio_set_level(RIGHTSTEP_3_PIN, 0);
+                        gpio_set_level(RIGHTSTEP_4_PIN, 1);
+                        vTaskDelay(pdMS_TO_TICKS(10));
+                    }
+
+                    gpio_set_level(RIGHTSTEP_1_PIN, 0);
+                    gpio_set_level(RIGHTSTEP_2_PIN, 0);
+                    gpio_set_level(RIGHTSTEP_3_PIN, 0);
+                    gpio_set_level(RIGHTSTEP_4_PIN, 0);
+                }
+                else if ((currentTime - previousTime) < 25){
+                    while(gpio_get_level(RSTEP_PIN) == 0){
+                        printf("button is pressed mane reverse direction\n");
+                        gpio_set_level(RIGHTSTEP_1_PIN, 0);
+                        gpio_set_level(RIGHTSTEP_2_PIN, 0);
+                        gpio_set_level(RIGHTSTEP_3_PIN, 0);
+                        gpio_set_level(RIGHTSTEP_4_PIN, 1);
+                        vTaskDelay(pdMS_TO_TICKS(10));
+
+                        gpio_set_level(RIGHTSTEP_1_PIN, 0);
+                        gpio_set_level(RIGHTSTEP_2_PIN, 0);
+                        gpio_set_level(RIGHTSTEP_3_PIN, 1);
+                        gpio_set_level(RIGHTSTEP_4_PIN, 0);
+                        vTaskDelay(pdMS_TO_TICKS(10));
+
+                        gpio_set_level(RIGHTSTEP_1_PIN, 0);
+                        gpio_set_level(RIGHTSTEP_2_PIN, 1);
+                        gpio_set_level(RIGHTSTEP_3_PIN, 0);
+                        gpio_set_level(RIGHTSTEP_4_PIN, 0);
+                        vTaskDelay(pdMS_TO_TICKS(10));
+
+                        gpio_set_level(RIGHTSTEP_1_PIN, 1);
+                        gpio_set_level(RIGHTSTEP_2_PIN, 0);
+                        gpio_set_level(RIGHTSTEP_3_PIN, 0);
+                        gpio_set_level(RIGHTSTEP_4_PIN, 0);
+                        vTaskDelay(pdMS_TO_TICKS(10));
+                    }
+
+                    gpio_set_level(RIGHTSTEP_1_PIN, 0);
+                    gpio_set_level(RIGHTSTEP_2_PIN, 0);
+                    gpio_set_level(RIGHTSTEP_3_PIN, 0);
+                    gpio_set_level(RIGHTSTEP_4_PIN, 0);
+                }
+                manual_overide_r = false;
+        } else {
+            printf("semaphore fail");
+        }
+    }
+}
+
+void manual_left_stepper_task(void *para){
+    TickType_t currentTime = xTaskGetTickCount();
+    TickType_t previousTime = 0; //prev 2 are for intrrupt timing
+        xLStepSem = xSemaphoreCreateBinary();
+    assert(xLStepSem);
+    gpio_reset_pin(LSTEP_PIN);
+    gpio_set_direction(LSTEP_PIN, GPIO_MODE_INPUT);
+    gpio_pullup_en(LSTEP_PIN);
+    gpio_set_intr_type(LSTEP_PIN, GPIO_INTR_NEGEDGE);
+    gpio_isr_handler_add(LSTEP_PIN, LSTEPBTTN_ISR, NULL);
+    while(1){
+         if (xSemaphoreTake(xLStepSem,  portMAX_DELAY) == pdTRUE){
+                        manual_overide_l = true;
+
+                printf("Button was pressed\n");
+                previousTime = currentTime;
+                currentTime = xTaskGetTickCount();
+                // printf("prev: %lu & curr: %lu \n", previousTime, currentTime);
+                if ((currentTime-previousTime) > 25){ //if the pir sensor interrupt went of time do uart stuff
+                    while(gpio_get_level(LSTEP_PIN) == 0){
+                        printf("button is pressed mane forward direction\n");
+                        gpio_set_level(LEFTSTEP_1_PIN, 1);
+                        gpio_set_level(LEFTSTEP_2_PIN, 0);
+                        gpio_set_level(LEFTSTEP_3_PIN, 0);
+                        gpio_set_level(LEFTSTEP_4_PIN, 0);
+                        vTaskDelay(pdMS_TO_TICKS(10));
+
+                        gpio_set_level(LEFTSTEP_1_PIN, 0);
+                        gpio_set_level(LEFTSTEP_2_PIN, 1);
+                        gpio_set_level(LEFTSTEP_3_PIN, 0);
+                        gpio_set_level(LEFTSTEP_4_PIN, 0);
+                        vTaskDelay(pdMS_TO_TICKS(10));
+
+                        gpio_set_level(LEFTSTEP_1_PIN, 0);
+                        gpio_set_level(LEFTSTEP_2_PIN, 0);
+                        gpio_set_level(LEFTSTEP_3_PIN, 1);
+                        gpio_set_level(LEFTSTEP_4_PIN, 0);
+                        vTaskDelay(pdMS_TO_TICKS(10));
+
+                        gpio_set_level(LEFTSTEP_1_PIN, 0);
+                        gpio_set_level(LEFTSTEP_2_PIN, 0);
+                        gpio_set_level(LEFTSTEP_3_PIN, 0);
+                        gpio_set_level(LEFTSTEP_4_PIN, 1);
+                        vTaskDelay(pdMS_TO_TICKS(10));
+                    }
+
+                    gpio_set_level(LEFTSTEP_1_PIN, 0);
+                    gpio_set_level(LEFTSTEP_2_PIN, 0);
+                    gpio_set_level(LEFTSTEP_3_PIN, 0);
+                    gpio_set_level(LEFTSTEP_4_PIN, 0);
+                }
+                else if ((currentTime - previousTime) < 25){
+                    while(gpio_get_level(LSTEP_PIN) == 0){
+                        printf("button is pressed mane reverse direction\n");
+                        gpio_set_level(LEFTSTEP_1_PIN, 0);
+                        gpio_set_level(LEFTSTEP_2_PIN, 0);
+                        gpio_set_level(LEFTSTEP_3_PIN, 0);
+                        gpio_set_level(LEFTSTEP_4_PIN, 1);
+                        vTaskDelay(pdMS_TO_TICKS(10));
+
+                        gpio_set_level(LEFTSTEP_1_PIN, 0);
+                        gpio_set_level(LEFTSTEP_2_PIN, 0);
+                        gpio_set_level(LEFTSTEP_3_PIN, 1);
+                        gpio_set_level(LEFTSTEP_4_PIN, 0);
+                        vTaskDelay(pdMS_TO_TICKS(10));
+
+                        gpio_set_level(LEFTSTEP_1_PIN, 0);
+                        gpio_set_level(LEFTSTEP_2_PIN, 1);
+                        gpio_set_level(LEFTSTEP_3_PIN, 0);
+                        gpio_set_level(LEFTSTEP_4_PIN, 0);
+                        vTaskDelay(pdMS_TO_TICKS(10));
+
+                        gpio_set_level(LEFTSTEP_1_PIN, 1);
+                        gpio_set_level(LEFTSTEP_2_PIN, 0);
+                        gpio_set_level(LEFTSTEP_3_PIN, 0);
+                        gpio_set_level(LEFTSTEP_4_PIN, 0);
+                        vTaskDelay(pdMS_TO_TICKS(10));
+                    }
+
+                    gpio_set_level(LEFTSTEP_1_PIN, 0);
+                    gpio_set_level(LEFTSTEP_2_PIN, 0);
+                    gpio_set_level(LEFTSTEP_3_PIN, 0);
+                    gpio_set_level(LEFTSTEP_4_PIN, 0);
+                }
+                manual_overide_l = false;
+        } else {
+            printf("semaphore fail");
+        }
+    }
 }
 
 void stepper_stop_task(void *parameters){ 
@@ -185,7 +406,8 @@ void stepper_task(void *parameter){
     int cleanRcounter = 0;
     
     while (1){
-        if (enable_left) {
+       if (!manual_overide_l){
+         if (enable_left) {
             gpio_set_level(LEFTSTEP_1_PIN, 1);
             gpio_set_level(LEFTSTEP_2_PIN, 0);
             gpio_set_level(LEFTSTEP_3_PIN, 0);
@@ -256,8 +478,10 @@ void stepper_task(void *parameter){
             vTaskDelay(pdMS_TO_TICKS(10));
 
     }
+       }
 
-    if (enable_right) {
+    if (!manual_overide_r){
+        if (enable_right) {
             gpio_set_level(RIGHTSTEP_1_PIN, 1);
             gpio_set_level(RIGHTSTEP_2_PIN, 0);
             gpio_set_level(RIGHTSTEP_3_PIN, 0);
@@ -325,6 +549,7 @@ void stepper_task(void *parameter){
             gpio_set_level(RIGHTSTEP_4_PIN, 0);
             vTaskDelay(pdMS_TO_TICKS(10));
 
+    }
     }
     }
 }

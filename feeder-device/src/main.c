@@ -9,7 +9,7 @@
 #include "esp_log.h"          // for ESP_LOGV, ESP_LOGI, esp_log_level_set
 #include "servo.h"
 #include "stepper.h"
-#include "ledstrip.h"
+#include "lux_to_led.h"
 #include "jay_hx711.h"
 #include "uart_comm.h"
 #include <string.h>
@@ -23,6 +23,8 @@ char esp_command[256] = "PIR TRIGGERED\r\n";
 //PIR Semaphore
 static SemaphoreHandle_t xPIRSem; //maybe i should do the same for the lux sensor 
 static const char *TAG = "example";
+
+volatile bool PirLedKey; 
 
 //PIR ISR
 void IRAM_ATTR PIR_ISR(void *parameter){
@@ -105,8 +107,70 @@ void UART_task(void *parameters){
     TickType_t previousTime = 0; //prev 2 are for intrrupt timing
     char rx_chunk[UART_RX_CHUNK_SIZE];
     size_t line_len = 0;
+    int left_grams;
+    int right_grams; 
+    char leftGramCommand[256];
+    char rightGramCommand[256];
+    bool rightCoverstats;
+    bool leftCoverstats;
+    char leftCoverCommand[256];
+    char rightCoverCommand[256];
+    int ledStripVal;
+    char ledStripCommand[256];  
 
     while(1) {
+        left_grams = leftGramData();
+        right_grams = rightGramData();
+    
+        rightCoverstats = rightServoStatus();
+        leftCoverstats = leftServoStatus();
+
+        ledStripVal = ledStats();
+
+        snprintf(ledStripCommand, sizeof(ledStripCommand), "Ledstrip: Active, Currently at %d brightness\r\n", ledStripVal);
+        uart_comm_send_string(ledStripCommand);
+
+        if (leftCoverstats) {
+            snprintf(leftCoverCommand, sizeof(leftCoverCommand), "Left Access Lid: open\r\n");
+            uart_comm_send_string(leftCoverCommand);
+
+        } else {
+            snprintf(leftCoverCommand, sizeof(leftCoverCommand), "Left Access Lid: closed\r\n");
+            uart_comm_send_string(leftCoverCommand);
+        }
+
+        if (rightCoverstats) {
+            snprintf(rightCoverCommand, sizeof(rightCoverCommand), "Right Access Lid: open\r\n");
+            uart_comm_send_string(rightCoverCommand);
+        } else {
+            snprintf(rightCoverCommand, sizeof(rightCoverCommand), "Right Access Lid: closed\r\n");
+            uart_comm_send_string(rightCoverCommand);
+        }
+
+        snprintf(leftGramCommand, sizeof(leftGramCommand), "Left Bowl Grams: %d\r\n", left_grams);
+        snprintf(rightGramCommand, sizeof(rightGramCommand), "Right Bowl Grams: %d\r\n", right_grams);
+
+        esp_err_t leftDataErr = uart_comm_send_string(leftGramCommand);
+        vTaskDelay(pdMS_TO_TICKS(50));
+        esp_err_t rightDataErr = uart_comm_send_string(rightGramCommand);
+
+        // if (leftDataErr == ESP_OK){
+        //     printf(leftGramCommand);
+        //     printf("Sent left load cell data\n");
+        // }
+        // else{
+        //     printf("Error on left\n"); 
+        // }
+
+        // if (rightDataErr == ESP_OK){
+        //     printf(rightGramCommand);
+        //     printf("Sent right load cell data\n");
+        // }
+        // else{
+        //     printf("Error on right\n");
+        // }
+    
+
         if (xSemaphoreTake(xPIRSem, pdMS_TO_TICKS(20)) == pdTRUE){
             previousTime = currentTime;
             currentTime = xTaskGetTickCount();
@@ -114,10 +178,15 @@ void UART_task(void *parameters){
             if ((currentTime-previousTime) > pdMS_TO_TICKS(3000)){ //if the pir sensor interrupt went of time do uart stuff
                 //vTaskDelay(pdMS_TO_TICKS(3000));
                 printf("Reached\n");
+                PirLedKey = true; //good to turn led on 
+                PirLedDoor(PirLedKey);
                 vTaskDelay(pdMS_TO_TICKS(50));
                 uart_comm_send_string(esp_command); //send the pir trigger command from esp to pi 
                 vTaskDelay(pdMS_TO_TICKS(50));
                 printf("Sent %s:", esp_command);
+            } else {
+                PirLedKey = false; //good to turn led off  
+                PirLedDoor(PirLedKey);
             }
         }
 
@@ -133,7 +202,15 @@ void UART_task(void *parameters){
                 //if else statement because both pets can have the food dispense at the same time 
                 //if order to do this the if statements have to be different 
     }
+      esp_err_t err = uart_comm_init();
+
+    if (err != ESP_OK) {
+        return;   // wrong for a FreeRTOS task
+    }
+
 }
+
+
 
 //instead of making a seprate file for the pir sensor im going to implement it here in the main
 //i feel like the main is a proper place for this task as the pir sensor is the of the system
@@ -142,6 +219,7 @@ void app_main(void)
 {
     //vTaskDelay(pdTICKS_TO_MS(1000));
     //uart_comm_send_string("HELP");
+//step_init(); 
     xPIRSem = xSemaphoreCreateBinary();
     if( xPIRSem != NULL ){
        // The semaphore was created successfully.
@@ -160,13 +238,35 @@ void app_main(void)
     gpio_isr_handler_add(PIR_PIN, PIR_ISR, NULL);
     printf("we made it here\n");
 
-    //uart_comm_init(); //initalize UART
+   // uart_comm_init(); //initalize UART
+               //moveLEFTservo(0, 90);
 
-    xTaskCreatePinnedToCore(ledstrip_task,"set brightness using light",4096,NULL, 2,NULL,0); //servo and stepper will be on the same core 
-    xTaskCreatePinnedToCore(read_TSL2591,"find light in darkness",4096,NULL, 2,NULL,0); //servo and stepper will be on the same core 
+
+    //xTaskCreatePinnedToCore(ledstrip_task,"set brightness using light",4096,NULL, 2,NULL,0); //servo and stepper will be on the same core 
+    xTaskCreatePinnedToCore(LUX_to_LED_task,"set brightness using light",4096,NULL, 2,NULL,0); //servo and stepper will be on the same core 
+    xTaskCreatePinnedToCore(lux_data_task,"find light in darkness",4096,NULL, 2   ,NULL,    0); //servo and stepper will be on the same core 
     xTaskCreatePinnedToCore(servoRotate_task,"rotate the servo back a forth", 4096,NULL, 4,NULL,0); //servo and stepper will be on the same core 
-    //xTaskCreatePinnedToCore(stepper_spin_task, "rotate the steppper", 4096,NULL, 4,NULL,0); //servo and stepper will be on the same core 
+    // //xTaskCreatePinnedToCore(stepper_spin_task, "rotate the steppper", 4096,NULL, 4,NULL,0); //servo and stepper will be on the same core 
     xTaskCreatePinnedToCore(load_cell_task,"activate the load cell to read food weight, activate the stepper motors to dispense food",4096,NULL,4, NULL,1); //im putting this on core 1 because it has a task running inside of it 
     xTaskCreatePinnedToCore(UART_task,"serial data task",4096,NULL,3,NULL,1);
+    xTaskCreatePinnedToCore(manual_right_stepper_task, "manual right stepper control", 2048, NULL,5,NULL,1);
+    xTaskCreatePinnedToCore(manual_left_stepper_task, "manual left stepper control", 2048, NULL,5,NULL,1);
+    xTaskCreatePinnedToCore(manual_right_servo_task, "manual right servo control", 2048, NULL,5,NULL,1);
+    xTaskCreatePinnedToCore(manual_left_servo_task, "manual left servo control", 2048, NULL,5,NULL,1);
+    xTaskCreatePinnedToCore(detection_led_task, "led detection task", 2048, NULL, 4, NULL, 0);
+
+    int match_val = 0;
+    while(1){
+        
+        if (match_val == 3){
+            match_val = 0;
+        } else {
+            match_val++;
+        }
+
+        match_val_receive(match_val);
+        vTaskDelay(pdMS_TO_TICKS(5000));//wait 10 secs
+
+    }
         
 }

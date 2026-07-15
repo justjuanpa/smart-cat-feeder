@@ -78,7 +78,7 @@ export default function ActivityScreen() {
             <Text style={styles.title}>Activity</Text>
           </View>
           <Pressable onPress={loadActivity} style={styles.iconButton}>
-            <MaterialIcons name="refresh" size={22} color="#0F766E" />
+            <MaterialIcons name="refresh" size={22} color="#1D4FA3" />
           </Pressable>
         </View>
 
@@ -107,7 +107,7 @@ export default function ActivityScreen() {
             events.map((event) => (
               <View key={event.id} style={styles.eventRow}>
                 <View style={styles.eventIcon}>
-                  <MaterialIcons name={eventIcon(event.event_type)} size={20} color="#155E75" />
+                  <MaterialIcons name={eventIcon(event.event_type)} size={20} color="#1D4FA3" />
                 </View>
                 <View style={styles.rowText}>
                   <Text style={styles.cardTitle}>{event.pets?.name ?? event.recognition_label ?? 'Unknown pet'}</Text>
@@ -153,7 +153,7 @@ function eventSummary(event: FeedingEventRow) {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F6F2EA',
+    backgroundColor: '#F7FAFF',
   },
   container: {
     gap: 18,
@@ -166,19 +166,21 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   eyebrow: {
-    color: '#0F766E',
+    color: '#1D4FA3',
     fontSize: 13,
     fontWeight: '900',
     textTransform: 'uppercase',
   },
   title: {
-    color: '#172121',
+    color: '#10213F',
     fontSize: 34,
     fontWeight: '900',
   },
   iconButton: {
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
+    borderColor: '#D8E2F3',
+    borderWidth: 1,
     borderRadius: 8,
     height: 48,
     justifyContent: 'center',
@@ -186,7 +188,7 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     alignItems: 'center',
-    backgroundColor: '#0F766E',
+    backgroundColor: '#1D4FA3',
     borderRadius: 8,
     flexDirection: 'row',
     gap: 8,
@@ -203,18 +205,20 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: '#FFFFFF',
+    borderColor: '#D8E2F3',
+    borderWidth: 1,
     borderRadius: 8,
     gap: 14,
     padding: 16,
   },
   sectionTitle: {
-    color: '#172121',
+    color: '#10213F',
     fontSize: 21,
     fontWeight: '900',
   },
   eventRow: {
     alignItems: 'center',
-    borderTopColor: '#EFE7DC',
+    borderTopColor: '#E6EDF8',
     borderTopWidth: 1,
     flexDirection: 'row',
     gap: 12,
@@ -244,22 +248,22 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   cardTitle: {
-    color: '#172121',
+    color: '#10213F',
     fontSize: 16,
     fontWeight: '900',
   },
   muted: {
-    color: '#6B6259',
+    color: '#667085',
     fontSize: 14,
     lineHeight: 20,
   },
   small: {
-    color: '#7C7066',
+    color: '#7A8BA6',
     fontSize: 12,
     lineHeight: 16,
   },
   amount: {
-    color: '#172121',
+    color: '#10213F',
     fontSize: 15,
     fontWeight: '900',
   },

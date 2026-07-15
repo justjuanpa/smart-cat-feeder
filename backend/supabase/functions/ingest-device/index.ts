@@ -11,6 +11,8 @@ type DevicePayload = {
   recognition_confidence?: number;
   amount_grams?: number;
   current_weight_grams?: number;
+  left_bowl_weight_grams?: number;
+  right_bowl_weight_grams?: number;
   motion_detected?: boolean;
   firmware_version?: string;
   vision_version?: string;
@@ -106,11 +108,13 @@ Deno.serve(async (request) => {
       device_id: device.id,
       owner_id: device.owner_id,
       online: true,
-      current_weight_grams: payload.current_weight_grams ?? null,
+      current_weight_grams: payload.current_weight_grams ?? undefined,
+      left_bowl_weight_grams: payload.left_bowl_weight_grams ?? undefined,
+      right_bowl_weight_grams: payload.right_bowl_weight_grams ?? undefined,
       last_motion_at: payload.motion_detected ? now : undefined,
       last_event_at: payload.event_type ? occurredAt : undefined,
-      firmware_version: payload.firmware_version ?? null,
-      vision_version: payload.vision_version ?? null,
+      firmware_version: payload.firmware_version ?? undefined,
+      vision_version: payload.vision_version ?? undefined,
       updated_at: now,
     });
 

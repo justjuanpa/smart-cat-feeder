@@ -13,6 +13,7 @@ def parse_embedded_message(line):
             "kind": "telemetry",
             "payload": {
                 "current_weight_grams": grams,
+                "left_bowl_weight_grams": grams,
                 "notes": f"Left bowl weight: {grams} g",
                 "raw_payload": {
                     "left_bowl_grams": grams,
@@ -29,6 +30,7 @@ def parse_embedded_message(line):
             "kind": "telemetry",
             "payload": {
                 "current_weight_grams": grams,
+                "right_bowl_weight_grams": grams,
                 "notes": f"Right bowl weight: {grams} g",
                 "raw_payload": {
                     "right_bowl_grams": grams,

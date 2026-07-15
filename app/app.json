@@ -40,6 +40,12 @@
         }
       ],
       "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow PAWS to choose pet profile pictures from your photo library."
+        }
+      ],
       "expo-web-browser"
     ],
     "experiments": {

@@ -9,6 +9,7 @@
 #include "esp_ws28xx.h"
 #include "lux_to_led.h"
 #include "math.h"
+#include <stdbool.h>
 
 #define I2C_MASTER_TIMEOUT_MS 1000
 #define SDA_PIN GPIO_NUM_1

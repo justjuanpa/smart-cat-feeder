@@ -23,10 +23,17 @@ void rotate_backward();
 void step_init();
 void stepper_spin_task(void *parameters); //spin the servo forward 
 void stepper_stop_task(void *parameters); //spin the servo backwards for cleanning 
+void manual_left_stepper_task(void *parameters); //spin the servo backwards for cleanning 
+void manual_right_stepper_task(void *parameters); //spin the servo backwards for cleanning 
+
+
 void stepper_spin_stop(bool val);
 void stepper_task(void *para);
 void stepperEnableLeft(bool val);
 void stepperEnableRight(bool val);
+esp_err_t rightStepTake(TickType_t wait_time); //for the bttn interrupt and sttepper task
+void rightStepGive(void);
+
 //and to get rid of extra food 
 
 #endif // STEPPER_H

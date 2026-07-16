@@ -102,25 +102,34 @@ Deno.serve(async (request) => {
     return jsonResponse({ error: statusError.message }, 500);
   }
 
-  const { error: deviceStatusError } = await supabase
-    .from('device_status')
-    .upsert({
+  let deviceStatusRow;
+
+  try {
+    deviceStatusRow = await buildDeviceStatusRow(supabase, {
       device_id: device.id,
       owner_id: device.owner_id,
-      online: true,
-      current_weight_grams: payload.current_weight_grams ?? undefined,
-      left_bowl_weight_grams: payload.left_bowl_weight_grams ?? undefined,
-      right_bowl_weight_grams: payload.right_bowl_weight_grams ?? undefined,
-      last_motion_at: payload.motion_detected ? now : undefined,
-      last_event_at: payload.event_type ? occurredAt : undefined,
-      firmware_version: payload.firmware_version ?? undefined,
-      vision_version: payload.vision_version ?? undefined,
-      updated_at: now,
+      payload,
+      now,
+      occurred_at: occurredAt,
     });
+  } catch (statusBuildError) {
+    const message = statusBuildError instanceof Error ? statusBuildError.message : 'Could not build device status row.';
+    return jsonResponse({ error: message }, 500);
+  }
+
+  const { error: deviceStatusError } = await supabase
+    .from('device_status')
+    .upsert(deviceStatusRow);
 
   if (deviceStatusError) {
     return jsonResponse({ error: deviceStatusError.message }, 500);
   }
+
+  const { data: updatedDeviceStatus } = await supabase
+    .from('device_status')
+    .select('current_weight_grams, left_bowl_weight_grams, right_bowl_weight_grams, updated_at')
+    .eq('device_id', device.id)
+    .maybeSingle();
 
   if (!payload.event_type) {
     return jsonResponse({
@@ -128,6 +137,7 @@ Deno.serve(async (request) => {
       device_id: device.id,
       status_updated: true,
       feeding_event_created: false,
+      device_status: updatedDeviceStatus,
     });
   }
 
@@ -159,8 +169,50 @@ Deno.serve(async (request) => {
     device_id: device.id,
     feeding_event_id: event.id,
     feeding_event_created: true,
+    device_status: updatedDeviceStatus,
   });
 });
+
+async function buildDeviceStatusRow(
+  supabase: ReturnType<typeof createClient>,
+  {
+    device_id,
+    owner_id,
+    payload,
+    now,
+    occurred_at,
+  }: {
+    device_id: string;
+    owner_id: string;
+    payload: DevicePayload;
+    now: string;
+    occurred_at: string;
+  },
+) {
+  const { data: existingStatus, error } = await supabase
+    .from('device_status')
+    .select('current_weight_grams, left_bowl_weight_grams, right_bowl_weight_grams, last_motion_at, last_event_at, firmware_version, vision_version')
+    .eq('device_id', device_id)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return {
+    device_id,
+    owner_id,
+    online: true,
+    current_weight_grams: payload.current_weight_grams ?? existingStatus?.current_weight_grams ?? null,
+    left_bowl_weight_grams: payload.left_bowl_weight_grams ?? existingStatus?.left_bowl_weight_grams ?? null,
+    right_bowl_weight_grams: payload.right_bowl_weight_grams ?? existingStatus?.right_bowl_weight_grams ?? null,
+    last_motion_at: payload.motion_detected ? now : existingStatus?.last_motion_at ?? null,
+    last_event_at: payload.event_type ? occurred_at : existingStatus?.last_event_at ?? null,
+    firmware_version: payload.firmware_version ?? existingStatus?.firmware_version ?? null,
+    vision_version: payload.vision_version ?? existingStatus?.vision_version ?? null,
+    updated_at: now,
+  };
+}
 
 async function findPetId(
   supabase: ReturnType<typeof createClient>,

@@ -167,10 +167,14 @@ function formatBowlWeights(deviceStatus: DeviceStatusRow | null) {
     return "--";
   }
 
-  const left = formatGrams(deviceStatus.left_bowl_weight_grams);
-  const right = formatGrams(deviceStatus.right_bowl_weight_grams);
+  const left = formatBowlGrams(deviceStatus.left_bowl_weight_grams);
+  const right = formatBowlGrams(deviceStatus.right_bowl_weight_grams);
 
   return `L: ${left} \nR: ${right}`;
+}
+
+function formatBowlGrams(value: number | null) {
+  return value == null ? "--" : formatGrams(value);
 }
 
 function Metric({ label, value }: { label: string; value: string }) {

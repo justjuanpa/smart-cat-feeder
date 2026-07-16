@@ -77,8 +77,8 @@ export default function DeviceScreen() {
         ) : null}
 
         <View style={styles.metricGrid}>
-          <Metric label="Left bowl" value={formatGrams(deviceStatus?.left_bowl_weight_grams ?? null)} />
-          <Metric label="Right bowl" value={formatGrams(deviceStatus?.right_bowl_weight_grams ?? null)} />
+          <Metric label="Left bowl" value={formatBowlGrams(deviceStatus?.left_bowl_weight_grams ?? null)} />
+          <Metric label="Right bowl" value={formatBowlGrams(deviceStatus?.right_bowl_weight_grams ?? null)} />
           <Metric label="Last motion" value={formatRelativeTime(deviceStatus?.last_motion_at ?? null)} />
           <Metric label="Last event" value={formatRelativeTime(deviceStatus?.last_event_at ?? null)} />
           <Metric label="Vision" value={deviceStatus?.vision_version ?? 'Unknown'} />
@@ -110,6 +110,10 @@ function Metric({ label, value }: { label: string; value: string }) {
       <Text style={styles.metricLabel}>{label}</Text>
     </View>
   );
+}
+
+function formatBowlGrams(value: number | null) {
+  return value == null ? '--' : formatGrams(value);
 }
 
 function SetupRow({ title, detail, done }: { title: string; detail: string; done: boolean }) {

@@ -115,7 +115,7 @@ export default function ActivityScreen() {
                 </View>
                 <View style={styles.eventMeta}>
                   <Text style={styles.small}>{formatTime(event.occurred_at)}</Text>
-                  <Text style={styles.amount}>{formatGrams(event.amount_grams)}</Text>
+                  <Text style={styles.amount}>{formatEventAmount(event)}</Text>
                 </View>
               </View>
             ))
@@ -148,6 +148,14 @@ function eventSummary(event: FeedingEventRow) {
   }
 
   return `${event.event_type} event${event.authorized === false ? ': access denied' : ''}.`;
+}
+
+function formatEventAmount(event: FeedingEventRow) {
+  if (event.amount_grams == null) {
+    return '--';
+  }
+
+  return formatGrams(event.amount_grams);
 }
 
 const styles = StyleSheet.create({

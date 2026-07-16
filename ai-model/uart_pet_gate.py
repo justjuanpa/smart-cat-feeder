@@ -269,6 +269,14 @@ def reset_stale_pending_bowls(bowl_state, args):
         state["pending_since"] = None
 
 
+def update_bowl_weight_state(bowl_state, payload):
+    if "left_bowl_weight_grams" in payload:
+        bowl_state["LEFT"]["latest_weight_grams"] = payload["left_bowl_weight_grams"]
+
+    if "right_bowl_weight_grams" in payload:
+        bowl_state["RIGHT"]["latest_weight_grams"] = payload["right_bowl_weight_grams"]
+
+
 def mark_bowl_open(bowl_state, side, args):
     state = bowl_state[side]
     state["status"] = "open"
@@ -282,10 +290,12 @@ def mark_bowl_open(bowl_state, side, args):
             "event_type": "dispensed",
             "authorized": True,
             "recognition_label": SIDE_PETS[side],
+            "amount_grams": state.get("latest_weight_grams"),
             "notes": f"{side} bowl opened after dispense target",
             "raw_payload": {
                 "side": side,
                 "message": f"OPENED_{side}",
+                "latest_weight_grams": state.get("latest_weight_grams"),
             },
         },
     )
@@ -558,12 +568,14 @@ def main():
                     "misses": 0,
                     "next_check_at": None,
                     "pending_since": None,
+                    "latest_weight_grams": None,
                 },
                 "RIGHT": {
                     "status": "closed",
                     "misses": 0,
                     "next_check_at": None,
                     "pending_since": None,
+                    "latest_weight_grams": None,
                 },
             }
 
@@ -596,6 +608,7 @@ def main():
                 embedded_message = parse_embedded_message(message)
                 if embedded_message is not None:
                     print(f"Telemetry <= {embedded_message['payload']}")
+                    update_bowl_weight_state(bowl_state, embedded_message["payload"])
                     report_to_cloud(args, embedded_message["payload"])
                     continue
 

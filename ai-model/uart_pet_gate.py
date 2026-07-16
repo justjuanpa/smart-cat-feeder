@@ -2,8 +2,10 @@ import argparse
 from collections import Counter
 import os
 from pathlib import Path
+import queue
 import sys
 import tempfile
+import threading
 import time
 
 import cv2
@@ -69,32 +71,83 @@ def report_to_cloud(args, payload):
         print(f"Cloud ingest failed: {error}")
 
 
-def should_report_telemetry(telemetry_report_cache, payload, args):
-    raw_payload = payload.get("raw_payload", {})
-    if not raw_payload:
-        return True
+class CloudReporter:
+    def __init__(self, args):
+        self.args = args
+        self.enabled = bool(args.ingest_url and args.device_token)
+        self.queue = queue.Queue(maxsize=args.cloud_queue_size)
+        self.thread = None
+        self.stop_requested = threading.Event()
+        self.dropped_telemetry = 0
+        self.dropped_events = 0
 
-    key = ",".join(sorted(raw_payload.keys()))
-    value = tuple(sorted(raw_payload.items()))
-    now = time.monotonic()
-    previous = telemetry_report_cache.get(key)
-    is_lid_status = (
-        "left_access_lid" in raw_payload
-        or "right_access_lid" in raw_payload
-    )
-    value_changed = previous is None or previous["value"] != value
-    last_reported_at = previous["reported_at"] if previous is not None else None
+    def start(self):
+        if not self.enabled:
+            print("Cloud ingest disabled")
+            return
 
-    if is_lid_status and value_changed:
-        telemetry_report_cache[key] = {"value": value, "reported_at": now}
-        return True
+        self.thread = threading.Thread(
+            target=self._run,
+            name="cloud-reporter",
+            daemon=True,
+        )
+        self.thread.start()
+        print("Cloud ingest worker started")
 
-    if last_reported_at is None or now - last_reported_at >= args.telemetry_report_interval:
-        telemetry_report_cache[key] = {"value": value, "reported_at": now}
-        return True
+    def submit(self, payload, low_priority=False):
+        if not self.enabled:
+            return
 
-    telemetry_report_cache[key] = {"value": value, "reported_at": last_reported_at}
-    return False
+        try:
+            self.queue.put_nowait((payload, low_priority))
+            return
+        except queue.Full:
+            pass
+
+        if low_priority:
+            self.dropped_telemetry += 1
+            if self.dropped_telemetry == 1 or self.dropped_telemetry % 25 == 0:
+                print(
+                    "Cloud ingest queue full; "
+                    f"dropped {self.dropped_telemetry} telemetry payload(s)"
+                )
+            return
+
+        self.dropped_events += 1
+        print(
+            "Cloud ingest queue full; "
+            f"dropped important event payload #{self.dropped_events}: {payload}"
+        )
+
+    def stop(self):
+        if not self.enabled or self.thread is None:
+            return
+
+        self.stop_requested.set()
+        self.thread.join(timeout=self.args.cloud_shutdown_timeout)
+        if self.thread.is_alive():
+            print("Cloud ingest worker still draining; exiting without waiting")
+
+    def _run(self):
+        while not self.stop_requested.is_set() or not self.queue.empty():
+            try:
+                payload, _low_priority = self.queue.get(timeout=0.2)
+            except queue.Empty:
+                continue
+
+            try:
+                report_to_cloud(self.args, payload)
+            finally:
+                self.queue.task_done()
+
+
+def queue_cloud_report(args, payload, low_priority=False):
+    reporter = getattr(args, "cloud_reporter", None)
+    if reporter is None:
+        report_to_cloud(args, payload)
+        return
+
+    reporter.submit(payload, low_priority=low_priority)
 
 
 def create_identity_pipeline(args):
@@ -322,7 +375,7 @@ def mark_bowl_open(bowl_state, side, args):
     state["close_sent_at"] = None
     print(f"{side} bowl is open; next presence check in {args.presence_check_interval}s")
 
-    report_to_cloud(
+    queue_cloud_report(
         args,
         {
             "event_type": "dispensed",
@@ -499,7 +552,7 @@ def handle_trigger(
     recognizer,
     profiles,
 ):
-    report_to_cloud(args, {"motion_detected": True})
+    queue_cloud_report(args, {"motion_detected": True})
 
     command, result = detect_pet_identity(
         camera=camera,
@@ -515,7 +568,7 @@ def handle_trigger(
 
         send_line(connection, "DENY")
         print("UART => DENY")
-        report_to_cloud(
+        queue_cloud_report(
             args,
             {
                 "event_type": "denied",
@@ -540,7 +593,7 @@ def handle_trigger(
     side_state["pending_since"] = time.monotonic()
     side_state["close_sent_at"] = None
     print(f"UART => {command} ({pet_name})")
-    report_to_cloud(
+    queue_cloud_report(
         args,
         {
             "event_type": "authorized",
@@ -684,6 +737,18 @@ def main():
         help="Disable all cloud ingest calls for local UART/CV latency testing.",
     )
     parser.add_argument(
+        "--cloud-queue-size",
+        type=int,
+        default=100,
+        help="Maximum queued cloud payloads before low-priority telemetry is dropped.",
+    )
+    parser.add_argument(
+        "--cloud-shutdown-timeout",
+        type=float,
+        default=2.0,
+        help="Seconds to wait for queued cloud payloads when shutting down.",
+    )
+    parser.add_argument(
         "--vision-version",
         default=VISION_VERSION,
         help="Version string reported to the backend.",
@@ -698,9 +763,13 @@ def main():
         args.ingest_url = None
         args.device_token = None
 
+    cloud_reporter = CloudReporter(args)
+    args.cloud_reporter = cloud_reporter
+
     camera, yolo_model, recognizer, profiles = create_identity_pipeline(args)
 
     try:
+        cloud_reporter.start()
         camera.start()
         time.sleep(args.warmup)
 
@@ -710,7 +779,7 @@ def main():
             connection.reset_output_buffer()
 
             print(f"Listening for '{args.trigger_message}' on {args.port} @ {args.baud}")
-            report_to_cloud(
+            queue_cloud_report(
                 args,
                 {"motion_detected": False, "notes": "UART identity gate started"},
             )
@@ -779,7 +848,11 @@ def main():
                         embedded_message["payload"],
                         args,
                     ):
-                        report_to_cloud(args, embedded_message["payload"])
+                        queue_cloud_report(
+                            args,
+                            embedded_message["payload"],
+                            low_priority=True,
+                        )
                     continue
 
                 if message != args.trigger_message:
@@ -798,6 +871,7 @@ def main():
     finally:
         camera.stop()
         camera.close()
+        cloud_reporter.stop()
 
 
 if __name__ == "__main__":

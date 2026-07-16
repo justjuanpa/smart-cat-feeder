@@ -366,6 +366,35 @@ def sync_lid_state_from_telemetry(bowl_state, payload, args):
         state["pending_since"] = None
 
 
+def should_report_telemetry(telemetry_report_cache, payload, args):
+    raw_payload = payload.get("raw_payload", {})
+    if not raw_payload:
+        return True
+
+    key = ",".join(sorted(raw_payload.keys()))
+    value = tuple(sorted(raw_payload.items()))
+    now = time.monotonic()
+    previous = telemetry_report_cache.get(key)
+
+    is_lid_status = "left_access_lid" in raw_payload or "right_access_lid" in raw_payload
+    value_changed = previous is None or previous["value"] != value
+    last_reported_at = previous["reported_at"] if previous is not None else None
+
+    if is_lid_status and value_changed:
+        telemetry_report_cache[key] = {"value": value, "reported_at": now}
+        return True
+
+    if last_reported_at is None or now - last_reported_at >= args.telemetry_report_interval:
+        telemetry_report_cache[key] = {"value": value, "reported_at": now}
+        return True
+
+    telemetry_report_cache[key] = {
+        "value": value,
+        "reported_at": last_reported_at,
+    }
+    return False
+
+
 def close_bowl(connection, bowl_state, side):
     send_line(connection, CLOSE_COMMANDS[side])
     print(f"UART => {CLOSE_COMMANDS[side]}")

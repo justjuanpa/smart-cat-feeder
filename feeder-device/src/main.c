@@ -150,7 +150,6 @@ void UART_task(void *parameters){
             (now - last_telemetry_sent_time) >= pdMS_TO_TICKS(TELEMETRY_INTERVAL_MS)){
             left_grams = leftGramData();
             right_grams = rightGramData();
-
             rightCoverstats = rightServoStatus();
             leftCoverstats = leftServoStatus();
 

@@ -6,6 +6,7 @@
 #include "servo.h"
 #include "esp_err.h"
 #include "jay_hx711.h"
+#include "uart_comm.h"
 #include "freertos/semphr.h"
 
 
@@ -145,6 +146,7 @@ void moveLEFTservoTo(uint16_t target_angle)
 
     if (left_servo_current_angle == target_angle) {
         printf("Left servo already at %u degrees\n", target_angle);
+        servoStatusLeft = (target_angle == 90);
         return;
     }
 
@@ -177,6 +179,7 @@ static void moveRIGHTservoTo(uint16_t target_angle)
 
     if (right_servo_current_angle == target_angle) {
         printf("Right servo already at %u degrees\n", target_angle);
+        servoStatusRight = (target_angle == 0);
         return;
     }
 
@@ -406,6 +409,7 @@ void servoRotate_task(void *parameters)
         else {
           // Smoothly close the lid.
           moveLEFTservoTo(0);
+          uart_comm_send_string("CLOSED_LEFT\r\n");
         }
         last_command_left = command_left; 
        }
@@ -419,6 +423,7 @@ void servoRotate_task(void *parameters)
         }
         else{
             moveRIGHTservoTo(90); //Close right lid
+            uart_comm_send_string("CLOSED_RIGHT\r\n");
         }
         last_command_right = command_right; 
        }

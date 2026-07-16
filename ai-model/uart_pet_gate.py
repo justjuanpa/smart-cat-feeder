@@ -38,6 +38,10 @@ OPENED_MESSAGES = {
     "OPENED_LEFT": "LEFT",
     "OPENED_RIGHT": "RIGHT",
 }
+CLOSED_MESSAGES = {
+    "CLOSED_LEFT": "LEFT",
+    "CLOSED_RIGHT": "RIGHT",
+}
 PRESENCE_SIDE_ROI_DIR = burst_recognition.DEBUG_DIR / "presence_side_rois"
 
 
@@ -335,6 +339,16 @@ def mark_bowl_open(bowl_state, side, args):
     )
 
 
+def mark_bowl_closed(bowl_state, side, message):
+    print(message)
+    state = bowl_state[side]
+    state["status"] = "closed"
+    state["misses"] = 0
+    state["next_check_at"] = None
+    state["pending_since"] = None
+    state["close_sent_at"] = None
+
+
 def sync_lid_state_from_telemetry(bowl_state, payload, args):
     raw_payload = payload.get("raw_payload", {})
     lid_fields = {
@@ -365,7 +379,8 @@ def sync_lid_state_from_telemetry(bowl_state, payload, args):
                     )
                     continue
 
-                print(f"{side} lid still open after close grace; marking bowl open")
+                print(f"{side} lid telemetry still says open after close command; waiting for close confirmation")
+                continue
 
             if state["status"] != "open":
                 print(f"{side} lid telemetry says open; marking bowl open")
@@ -378,15 +393,12 @@ def sync_lid_state_from_telemetry(bowl_state, payload, args):
         if state["status"] not in {"open", "closing"}:
             continue
 
-        if state["status"] == "closing":
-            print(f"{side} lid telemetry confirms close")
-        else:
-            print(f"{side} lid telemetry says closed; marking bowl closed")
-        state["status"] = "closed"
-        state["misses"] = 0
-        state["next_check_at"] = None
-        state["pending_since"] = None
-        state["close_sent_at"] = None
+        message = (
+            f"{side} lid telemetry confirms close"
+            if state["status"] == "closing"
+            else f"{side} lid telemetry says closed; marking bowl closed"
+        )
+        mark_bowl_closed(bowl_state, side, message)
 
 
 def should_report_telemetry(telemetry_report_cache, payload, args):
@@ -419,6 +431,7 @@ def should_report_telemetry(telemetry_report_cache, payload, args):
 
 
 def close_bowl(connection, bowl_state, side):
+    connection.reset_input_buffer()
     send_line(connection, CLOSE_COMMANDS[side])
     print(f"UART => {CLOSE_COMMANDS[side]}")
     bowl_state[side]["status"] = "closing"
@@ -737,6 +750,11 @@ def main():
 
                 if message in OPENED_MESSAGES:
                     mark_bowl_open(bowl_state, OPENED_MESSAGES[message], args)
+                    continue
+
+                if message in CLOSED_MESSAGES:
+                    side = CLOSED_MESSAGES[message]
+                    mark_bowl_closed(bowl_state, side, f"{side} bowl close confirmed by ESP")
                     continue
 
                 embedded_message = parse_embedded_message(message)

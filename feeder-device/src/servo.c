@@ -35,7 +35,6 @@
 #define SERVO_STEP_DELAY_MS_R_CLOSE 20
 
 #define BUTTON_DEBOUNCE_MS       120
-#define DOUBLE_CLICK_WINDOW_MS   400
 
 static int right_servo_current_angle = 90;
 static int left_servo_current_angle = 0;
@@ -236,56 +235,36 @@ void manual_right_servo_task(void *para){
         }
         last_accepted_click_r = first_click_time_r;
 
-        //A click enters manual mode and toggles the servo.
+        // First click enters manual mode and toggles the lid.
+        // Next accepted click restores the original position and returns to auto.
         if (!manual_overide_servo_r) {
             stored_right_position = rightServoStatus();
             manual_right_servo_lid = stored_right_position;
             manual_overide_servo_r = true;
             printf("Entering manual mode\n");
-        }
 
-        if (manual_right_servo_lid) {
-            printf("Button pressed: closing lid\n");
-            moveRIGHTservoTo(90);  // closed
-            manual_right_servo_lid = false;
-        } 
-        else {
-            printf("Button pressed: opening lid\n");
-            moveRIGHTservoTo(0);   // open
-            manual_right_servo_lid = true;
-        }
-
-        //Remove any semaphore caused by bouncing while the servo moved.
-        while (xSemaphoreTake(xBTNRSem, 0) == pdTRUE) {}
-
-        //Wait briefly for an intentional second click.
-        BaseType_t second_click_r = xSemaphoreTake(
-            xBTNRSem,
-            pdMS_TO_TICKS(DOUBLE_CLICK_WINDOW_MS)
-        );
-
-        if (second_click_r == pdTRUE) {
-            TickType_t second_click_time_r = xTaskGetTickCount();
-
-            //Reject events that happened too quickly and are likely bounce.
-            if ((second_click_time_r - first_click_time_r) >= pdMS_TO_TICKS(BUTTON_DEBOUNCE_MS)) {
-                printf("Double click: returning to automatic mode\n");
-                //Keep manual override enabled while restoring the servo.
-                //This prevents servoRotate_task from controlling the same servo.
-                if (stored_right_position) {
-                    printf("Restoring open position\n");
-                    moveRIGHTservoTo(0);   // open
-                    manual_right_servo_lid = true;
-                } else {
-                    printf("Restoring closed position\n");
-                    moveRIGHTservoTo(90);  // closed
-                    manual_right_servo_lid = false;
-                }
-
-                //Only release the servo to automatic control after movement finishes.
-                manual_overide_servo_r = false;
-                last_accepted_click_r = second_click_time_r;
+            if (manual_right_servo_lid) {
+                printf("Button pressed: closing lid\n");
+                moveRIGHTservoTo(90);  // closed
+                manual_right_servo_lid = false;
+            } 
+            else {
+                printf("Button pressed: opening lid\n");
+                moveRIGHTservoTo(0);   // open
+                manual_right_servo_lid = true;
             }
+        } else {
+            printf("Returning to automatic mode\n");
+            if (stored_right_position) {
+                printf("Restoring open position\n");
+                moveRIGHTservoTo(0);   // open
+                manual_right_servo_lid = true;
+            } else {
+                printf("Restoring closed position\n");
+                moveRIGHTservoTo(90);  // closed
+                manual_right_servo_lid = false;
+            }
+            manual_overide_servo_r = false;
         }
 
         //Remove any remaining bounce events.
@@ -322,56 +301,38 @@ void manual_left_servo_task(void *para){
         }
         last_accepted_click_l = first_click_time_l;
 
-        //A click enters manual mode and toggles the servo.
+        // First click enters manual mode and toggles the lid.
+        // Next accepted click restores the original position and returns to auto.
         if (!manual_overide_servo_l) {
             stored_left_position = leftServoStatus();
             manual_left_servo_lid = stored_left_position;
             manual_overide_servo_l = true;
 
             printf("Entering manual mode\n");
-        }
-        if (manual_left_servo_lid) {
-            printf("Button pressed: closing left lid\n");
 
-            moveLEFTservoTo(0);  // closed
-            manual_left_servo_lid = false;
-        } else {
-            printf("Button pressed: opening left lid\n");
+            if (manual_left_servo_lid) {
+                printf("Button pressed: closing left lid\n");
 
-            moveLEFTservoTo(90);   // open
-            manual_left_servo_lid = true;
-        }
+                moveLEFTservoTo(0);  // closed
+                manual_left_servo_lid = false;
+            } else {
+                printf("Button pressed: opening left lid\n");
 
-        //Remove any semaphore caused by bouncing while the servo moved.
-        while (xSemaphoreTake(xBTNLSem, 0) == pdTRUE) {}
-
-        //Wait briefly for an intentional second click.
-        BaseType_t second_click_l = xSemaphoreTake(
-            xBTNLSem,
-            pdMS_TO_TICKS(DOUBLE_CLICK_WINDOW_MS)
-        );
-
-        if (second_click_l == pdTRUE) {
-            TickType_t second_click_time_l = xTaskGetTickCount();
-            //Reject events that happened too quickly and are likely bounce.
-            if ((second_click_time_l - first_click_time_l) >= pdMS_TO_TICKS(BUTTON_DEBOUNCE_MS)) {
-                printf("Double click: returning to automatic mode\n");
-                //Keep manual override enabled while restoring the servo.
-                //This prevents servoRotate_task from controlling the same servo.
-                if (stored_left_position) {
-                    printf("Restoring open position on the left cover\n");
-                    moveLEFTservoTo(90);   // open
-                    manual_left_servo_lid = true;
-                } else {
-                    printf("Restoring closed position on the left cover\n");
-                    moveLEFTservoTo(0);  // closed
-                    manual_left_servo_lid = false;
-                }
-
-                //Only release the servo to automatic control after movement finishes.
-                manual_overide_servo_l = false;
-                last_accepted_click_l = second_click_time_l;
+                moveLEFTservoTo(90);   // open
+                manual_left_servo_lid = true;
             }
+        } else {
+            printf("Returning to automatic mode\n");
+            if (stored_left_position) {
+                printf("Restoring open position on the left cover\n");
+                moveLEFTservoTo(90);   // open
+                manual_left_servo_lid = true;
+            } else {
+                printf("Restoring closed position on the left cover\n");
+                moveLEFTservoTo(0);  // closed
+                manual_left_servo_lid = false;
+            }
+            manual_overide_servo_l = false;
         }
 
          //Remove any remaining bounce events.

@@ -17,6 +17,9 @@
 
 #define PIR_PIN GPIO_NUM_4
 #define UART_RX_CHUNK_SIZE 64
+#define PIR_TRIGGER_INTERVAL_MS 3000
+#define TELEMETRY_INTERVAL_MS 2500
+#define UART_READ_TIMEOUT_MS 20
 char pi_command[256];
 char esp_command[256] = "PIR TRIGGERED\r\n";
 
@@ -110,8 +113,8 @@ void UART_task(void *parameters){
       printf("PIR level = %d\n", gpio_get_level(PIR_PIN));
         fflush(stdout);
 
-    TickType_t currentTime = xTaskGetTickCount();
-    TickType_t previousTime = 0; //prev 2 are for intrrupt timing
+    TickType_t last_pir_sent_time = 0;
+    TickType_t last_telemetry_sent_time = 0;
     char rx_chunk[UART_RX_CHUNK_SIZE];
     size_t line_len = 0;
     int left_grams;
@@ -126,84 +129,68 @@ void UART_task(void *parameters){
     char ledStripCommand[256];  
 
     while(1) {
-        left_grams = leftGramData();
-        right_grams = rightGramData();
-    
-        rightCoverstats = rightServoStatus();
-        leftCoverstats = leftServoStatus();
+        TickType_t now = xTaskGetTickCount();
 
-        ledStripVal = ledStats();
-
-        snprintf(ledStripCommand, sizeof(ledStripCommand), "Ledstrip: Active, Currently at %d brightness\r\n", ledStripVal);
-        uart_comm_send_string(ledStripCommand);
-
-        if (leftCoverstats) {
-            snprintf(leftCoverCommand, sizeof(leftCoverCommand), "Left Access Lid: open\r\n");
-            uart_comm_send_string(leftCoverCommand);
-
-        } else {
-            snprintf(leftCoverCommand, sizeof(leftCoverCommand), "Left Access Lid: closed\r\n");
-            uart_comm_send_string(leftCoverCommand);
-        }
-
-        if (rightCoverstats) {
-            snprintf(rightCoverCommand, sizeof(rightCoverCommand), "Right Access Lid: open\r\n");
-            uart_comm_send_string(rightCoverCommand);
-        } else {
-            snprintf(rightCoverCommand, sizeof(rightCoverCommand), "Right Access Lid: closed\r\n");
-            uart_comm_send_string(rightCoverCommand);
-        }
-
-        snprintf(leftGramCommand, sizeof(leftGramCommand), "Left Bowl Grams: %d\r\n", left_grams);
-        snprintf(rightGramCommand, sizeof(rightGramCommand), "Right Bowl Grams: %d\r\n", right_grams);
-
-        esp_err_t leftDataErr = uart_comm_send_string(leftGramCommand);
-        vTaskDelay(pdMS_TO_TICKS(50));
-        esp_err_t rightDataErr = uart_comm_send_string(rightGramCommand);
-
-        // if (leftDataErr == ESP_OK){
-        //     printf(leftGramCommand);
-        //     printf("Sent left load cell data\n");
-        // }
-        // else{
-        //     printf("Error on left\n"); 
-        // }
-
-        // if (rightDataErr == ESP_OK){
-        //     printf(rightGramCommand);
-        //     printf("Sent right load cell data\n");
-        // }
-        // else{
-        //     printf("Error on right\n");
-        // }
-    
-
-        if (xSemaphoreTake(xPIRSem, pdMS_TO_TICKS(20)) == pdTRUE){
-            previousTime = currentTime;
-            currentTime = xTaskGetTickCount();
-            printf("prev: %lu & curr: %lu \n", previousTime, currentTime);
-            if ((currentTime-previousTime) > pdMS_TO_TICKS(3000)){ //if the pir sensor interrupt went of time do uart stuff
-                //vTaskDelay(pdMS_TO_TICKS(3000));
+        if (xSemaphoreTake(xPIRSem, 0) == pdTRUE){
+            if (last_pir_sent_time == 0 ||
+                (now - last_pir_sent_time) > pdMS_TO_TICKS(PIR_TRIGGER_INTERVAL_MS)){
                 printf("Reached\n");
                 PirLedKey = true; //good to turn led on 
                 PirLedDoor(PirLedKey);
-                vTaskDelay(pdMS_TO_TICKS(50));
                 uart_comm_send_string(esp_command); //send the pir trigger command from esp to pi 
-                vTaskDelay(pdMS_TO_TICKS(50));
                 printf("Sent %s:", esp_command);
+                last_pir_sent_time = now;
             } else {
                 PirLedKey = false; //good to turn led off  
                 PirLedDoor(PirLedKey);
             }
         }
 
-        int len = uart_comm_read_string(rx_chunk, sizeof(rx_chunk), 1000);
-        if (len <= 0){
-            vTaskDelay(pdMS_TO_TICKS(50));
-            continue;
+        if (last_telemetry_sent_time == 0 ||
+            (now - last_telemetry_sent_time) >= pdMS_TO_TICKS(TELEMETRY_INTERVAL_MS)){
+            left_grams = leftGramData();
+            right_grams = rightGramData();
+        
+            rightCoverstats = rightServoStatus();
+            leftCoverstats = leftServoStatus();
+
+            ledStripVal = ledStats();
+
+            snprintf(ledStripCommand, sizeof(ledStripCommand), "Ledstrip: Active, Currently at %d brightness\r\n", ledStripVal);
+            uart_comm_send_string(ledStripCommand);
+
+            if (leftCoverstats) {
+                snprintf(leftCoverCommand, sizeof(leftCoverCommand), "Left Access Lid: open\r\n");
+                uart_comm_send_string(leftCoverCommand);
+
+            } else {
+                snprintf(leftCoverCommand, sizeof(leftCoverCommand), "Left Access Lid: closed\r\n");
+                uart_comm_send_string(leftCoverCommand);
+            }
+
+            if (rightCoverstats) {
+                snprintf(rightCoverCommand, sizeof(rightCoverCommand), "Right Access Lid: open\r\n");
+                uart_comm_send_string(rightCoverCommand);
+            } else {
+                snprintf(rightCoverCommand, sizeof(rightCoverCommand), "Right Access Lid: closed\r\n");
+                uart_comm_send_string(rightCoverCommand);
+            }
+
+            snprintf(leftGramCommand, sizeof(leftGramCommand), "Left Bowl Grams: %d\r\n", left_grams);
+            snprintf(rightGramCommand, sizeof(rightGramCommand), "Right Bowl Grams: %d\r\n", right_grams);
+
+            uart_comm_send_string(leftGramCommand);
+            uart_comm_send_string(rightGramCommand);
+
+            last_telemetry_sent_time = now;
         }
 
-        append_uart_bytes(pi_command, &line_len, rx_chunk, len);
+        int len = uart_comm_read_string(rx_chunk, sizeof(rx_chunk), UART_READ_TIMEOUT_MS);
+        if (len > 0){
+            append_uart_bytes(pi_command, &line_len, rx_chunk, len);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(5));
 
                 //the if statemments are seperate if statements instead of 
                 //if else statement because both pets can have the food dispense at the same time 

@@ -184,8 +184,8 @@ static void update_left_dispense(bool ready, int grams)
     }
 
     if (!ready) {
-        printf("Left HX711 not ready; stopping left dispense\n");
-        load_cell_enable_left(false);
+        printf("Left HX711 not ready; waiting before continuing left dispense\n");
+        stepperEnableLeft(false);
         return;
     }
 
@@ -210,8 +210,8 @@ static void update_right_dispense(bool ready, int grams)
     }
 
     if (!ready) {
-        printf("Right HX711 not ready; stopping right dispense\n");
-        load_cell_enable_right(false);
+        printf("Right HX711 not ready; waiting before continuing right dispense\n");
+        stepperEnableRight(false);
         return;
     }
 

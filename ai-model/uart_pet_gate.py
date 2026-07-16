@@ -679,6 +679,11 @@ def main():
         help="Plain device token. Defaults to PAWS_DEVICE_TOKEN.",
     )
     parser.add_argument(
+        "--no-cloud",
+        action="store_true",
+        help="Disable all cloud ingest calls for local UART/CV latency testing.",
+    )
+    parser.add_argument(
         "--vision-version",
         default=VISION_VERSION,
         help="Version string reported to the backend.",
@@ -689,6 +694,9 @@ def main():
     args.ingest_url = args.ingest_url or os.getenv("PAWS_INGEST_URL")
     args.device_serial = os.getenv("PAWS_DEVICE_SERIAL", args.device_serial)
     args.device_token = args.device_token or os.getenv("PAWS_DEVICE_TOKEN")
+    if args.no_cloud:
+        args.ingest_url = None
+        args.device_token = None
 
     camera, yolo_model, recognizer, profiles = create_identity_pipeline(args)
 

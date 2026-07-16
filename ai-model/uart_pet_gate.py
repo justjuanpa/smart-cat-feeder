@@ -269,7 +269,7 @@ def check_pet_present_on_side(
 
 
 def any_bowl_active(bowl_state):
-    return any(state["status"] in {"pending", "open"} for state in bowl_state.values())
+    return any(state["status"] in {"pending", "open", "closing"} for state in bowl_state.values())
 
 
 def reset_stale_pending_bowls(bowl_state, args):
@@ -295,6 +295,7 @@ def reset_stale_pending_bowls(bowl_state, args):
         state["misses"] = 0
         state["next_check_at"] = None
         state["pending_since"] = None
+        state["close_sent_at"] = None
 
 
 def update_bowl_weight_state(bowl_state, payload):
@@ -314,6 +315,7 @@ def mark_bowl_open(bowl_state, side, args):
     state["misses"] = 0
     state["next_check_at"] = time.monotonic() + args.presence_check_interval
     state["pending_since"] = None
+    state["close_sent_at"] = None
     print(f"{side} bowl is open; next presence check in {args.presence_check_interval}s")
 
     report_to_cloud(
@@ -348,6 +350,23 @@ def sync_lid_state_from_telemetry(bowl_state, payload, args):
         state = bowl_state[side]
 
         if normalized_status == "open":
+            if state["status"] == "closing":
+                close_sent_at = state.get("close_sent_at")
+                close_elapsed = (
+                    time.monotonic() - close_sent_at
+                    if close_sent_at is not None
+                    else args.close_telemetry_grace
+                )
+
+                if close_elapsed < args.close_telemetry_grace:
+                    print(
+                        f"{side} lid telemetry still says open "
+                        f"{close_elapsed:.1f}s after close command; waiting"
+                    )
+                    continue
+
+                print(f"{side} lid still open after close grace; marking bowl open")
+
             if state["status"] != "open":
                 print(f"{side} lid telemetry says open; marking bowl open")
             mark_bowl_open(bowl_state, side, args)
@@ -356,14 +375,18 @@ def sync_lid_state_from_telemetry(bowl_state, payload, args):
         if normalized_status != "closed":
             continue
 
-        if state["status"] != "open":
+        if state["status"] not in {"open", "closing"}:
             continue
 
-        print(f"{side} lid telemetry says closed; marking bowl closed")
+        if state["status"] == "closing":
+            print(f"{side} lid telemetry confirms close")
+        else:
+            print(f"{side} lid telemetry says closed; marking bowl closed")
         state["status"] = "closed"
         state["misses"] = 0
         state["next_check_at"] = None
         state["pending_since"] = None
+        state["close_sent_at"] = None
 
 
 def should_report_telemetry(telemetry_report_cache, payload, args):
@@ -398,10 +421,11 @@ def should_report_telemetry(telemetry_report_cache, payload, args):
 def close_bowl(connection, bowl_state, side):
     send_line(connection, CLOSE_COMMANDS[side])
     print(f"UART => {CLOSE_COMMANDS[side]}")
-    bowl_state[side]["status"] = "closed"
+    bowl_state[side]["status"] = "closing"
     bowl_state[side]["misses"] = 0
     bowl_state[side]["next_check_at"] = None
     bowl_state[side]["pending_since"] = None
+    bowl_state[side]["close_sent_at"] = time.monotonic()
 
 
 def run_due_presence_checks(
@@ -492,7 +516,7 @@ def handle_trigger(
     side_state = bowl_state[command]
     pet_name = result["final_prediction"].lower()
 
-    if side_state["status"] in {"pending", "open"}:
+    if side_state["status"] in {"pending", "open", "closing"}:
         print(f"{command} bowl already {side_state['status']} for {pet_name}; not restarting")
         return
 
@@ -501,6 +525,7 @@ def handle_trigger(
     side_state["misses"] = 0
     side_state["next_check_at"] = None
     side_state["pending_since"] = time.monotonic()
+    side_state["close_sent_at"] = None
     print(f"UART => {command} ({pet_name})")
     report_to_cloud(
         args,
@@ -614,6 +639,12 @@ def main():
         help="Seconds to wait for OPENED_LEFT/RIGHT before allowing a command retry.",
     )
     parser.add_argument(
+        "--close-telemetry-grace",
+        type=float,
+        default=4.0,
+        help="Seconds to ignore open telemetry after sending CLOSE_LEFT/RIGHT.",
+    )
+    parser.add_argument(
         "--telemetry-report-interval",
         type=float,
         default=10.0,
@@ -668,6 +699,7 @@ def main():
                     "misses": 0,
                     "next_check_at": None,
                     "pending_since": None,
+                    "close_sent_at": None,
                     "latest_weight_grams": None,
                 },
                 "RIGHT": {
@@ -675,6 +707,7 @@ def main():
                     "misses": 0,
                     "next_check_at": None,
                     "pending_since": None,
+                    "close_sent_at": None,
                     "latest_weight_grams": None,
                 },
             }

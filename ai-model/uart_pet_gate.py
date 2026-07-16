@@ -279,11 +279,15 @@ def update_bowl_weight_state(bowl_state, payload):
 
 def mark_bowl_open(bowl_state, side, args):
     state = bowl_state[side]
+    if state["status"] == "open":
+        return
+
     state["status"] = "open"
     state["misses"] = 0
     state["next_check_at"] = time.monotonic() + args.presence_check_interval
     state["pending_since"] = None
     print(f"{side} bowl is open; next presence check in {args.presence_check_interval}s")
+
     report_to_cloud(
         args,
         {
@@ -299,6 +303,39 @@ def mark_bowl_open(bowl_state, side, args):
             },
         },
     )
+
+
+def sync_lid_state_from_telemetry(bowl_state, payload, args):
+    raw_payload = payload.get("raw_payload", {})
+    lid_fields = {
+        "LEFT": raw_payload.get("left_access_lid"),
+        "RIGHT": raw_payload.get("right_access_lid"),
+    }
+
+    for side, status in lid_fields.items():
+        if status is None:
+            continue
+
+        normalized_status = status.strip().lower()
+        state = bowl_state[side]
+
+        if normalized_status == "open":
+            if state["status"] != "open":
+                print(f"{side} lid telemetry says open; marking bowl open")
+            mark_bowl_open(bowl_state, side, args)
+            continue
+
+        if normalized_status != "closed":
+            continue
+
+        if state["status"] != "open":
+            continue
+
+        print(f"{side} lid telemetry says closed; marking bowl closed")
+        state["status"] = "closed"
+        state["misses"] = 0
+        state["next_check_at"] = None
+        state["pending_since"] = None
 
 
 def close_bowl(connection, bowl_state, side):
@@ -609,6 +646,11 @@ def main():
                 if embedded_message is not None:
                     print(f"Telemetry <= {embedded_message['payload']}")
                     update_bowl_weight_state(bowl_state, embedded_message["payload"])
+                    sync_lid_state_from_telemetry(
+                        bowl_state,
+                        embedded_message["payload"],
+                        args,
+                    )
                     report_to_cloud(args, embedded_message["payload"])
                     continue
 

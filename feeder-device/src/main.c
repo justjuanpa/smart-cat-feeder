@@ -55,8 +55,7 @@ static void process_pi_command(char *command)
     }
 
     if (strcmp(command, "DENY") == 0){
-        printf("Vision denied access; keeping servos closed\n");
-        load_cell_stop_all();
+        printf("Vision denied access; not starting a dispense cycle\n");
     }
 
     if (strcmp(command, "CLOSE_LEFT") == 0){

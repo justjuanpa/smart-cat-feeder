@@ -9,6 +9,9 @@
 #include "esp_ws28xx.h"
 #include "lux_to_led.h"
 #include "math.h"
+#include <stdbool.h>
+#include <uart_comm.h>
+#include <string.h>
 
 #define I2C_MASTER_TIMEOUT_MS 1000
 #define SDA_PIN GPIO_NUM_1
@@ -66,6 +69,13 @@ int led_val = 0;
 //if led_val 100 lux is low
 
 volatile bool pir_on_off;
+char pi_command_r[256];
+char pi_command_l[256];
+char pi_command_deny[256];
+static TickType_t last_command_r_time = 0;
+static TickType_t last_command_l_time = 0;
+static TickType_t last_command_deny_time = 0;
+
 
 //Function to intialize I2C bus 
 static void i2c_master_init_bus(i2c_master_bus_handle_t *bus_handle){
@@ -171,73 +181,253 @@ static float calculate_lux(uint16_t ch0, uint16_t ch1, float atime_ms, float aga
 void match_val_receive(int val){
     match = val; 
 }
- 
+
+void led_receive_command_r (char *command){
+    strcpy(pi_command_r,command);
+    last_command_r_time = xTaskGetTickCount();
+}
+
+void led_receive_command_l (char *command){
+    strcpy(pi_command_l,command);
+    last_command_l_time = xTaskGetTickCount();
+} 
+
+void led_receive_command_deny (char *command){
+    strcpy(pi_command_deny, command);
+    last_command_deny_time = xTaskGetTickCount();
+}
 
 void detection_led_task(void *para)
 {
-    ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_init(LED_PIN, WS2812B, LED_NUM, &ws2812_buffer));
+    ESP_ERROR_CHECK_WITHOUT_ABORT(
+        ws28xx_init(LED_PIN, WS2812B, LED_NUM, &ws2812_buffer)
+    );
 
+
+    bool command_active_r = false;
+    bool command_active_l = false; 
     while (1) {
 
-        CRGB detection_color;
+        // Reset at the start of every loop iteration.
+        command_active_l = false;
+        command_active_r = false;
+    TickType_t currTime = xTaskGetTickCount();
 
-        if (match == 1) { //match deteched 
-            detection_color = (CRGB){
-                .r = 0,
-                .g = 50,
-                .b = 0
-            };
-        }
-        else if (match == 2){ //false match
-              detection_color = (CRGB){
-                .r = 50,
-                .g = 0,
-                .b = 0
-            };
-        }
-         else { //idle
-            detection_color = (CRGB){
-                .r = 50,
-                .g = 50,
-                .b = 50
-            };
-        }
 
-        // Turn all detection LEDs on.
-        for (int i = 0; i < LED_NUM_W_STR; i++) {
-            ws2812_buffer[i] = detection_color;
-        }
-
-        for (int i = LED_NUM_W_END; i < LED_NUM; i++) {
-            ws2812_buffer[i] = detection_color;
-        }
-
-        ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
-
-        vTaskDelay(pdMS_TO_TICKS(500));
-
-        // Turn all detection LEDs off.
-        for (int i = 0; i < LED_NUM_W_STR; i++) {
-            ws2812_buffer[i] = (CRGB){
-                .r = 0,
-                .g = 0,
-                .b = 0
-            };
+        /*
+         * RIGHT command:
+         * Blink the right-side detection LEDs green.
+         */
+        if (strcmp(pi_command_r, "RIGHT") == 0) {
+            if ((currTime - last_command_r_time) < pdMS_TO_TICKS(5000)){
+                command_active_r = true;
+                for (int i = 0; i < LED_NUM_W_STR; i++) {
+                    ws2812_buffer[i] = (CRGB){
+                        .r = 0,
+                        .g = 50,
+                        .b = 0
+                    };
+                }
+                ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+                vTaskDelay(pdMS_TO_TICKS(500));
+                for (int i = 0; i < LED_NUM_W_STR; i++) {
+                    ws2812_buffer[i] = (CRGB){
+                        .r = 0,
+                        .g = 0,
+                        .b = 0
+                    };
+                }
+                ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+                vTaskDelay(pdMS_TO_TICKS(500));
+            } else {
+                command_active_r = false;
+            }
         }
 
-        for (int i = LED_NUM_W_END; i < LED_NUM; i++) {
-            ws2812_buffer[i] = (CRGB){
-                .r = 0,
-                .g = 0,
-                .b = 0
-            };
+        /*
+         * CLOSE_RIGHT command:
+         * Blink the right-side detection LEDs red.
+         */
+        else if (strcmp(pi_command_r, "CLOSE_RIGHT") == 0) {
+            if  ((currTime - last_command_r_time) < pdMS_TO_TICKS(3000)){
+                command_active_r = true;
+                for (int i = 0; i < LED_NUM_W_STR; i++) {
+                    ws2812_buffer[i] = (CRGB){
+                        .r = 50,
+                        .g = 0,
+                        .b = 0
+                    };
+                }
+
+                ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+                vTaskDelay(pdMS_TO_TICKS(500));
+
+                for (int i = 0; i < LED_NUM_W_STR; i++) {
+                    ws2812_buffer[i] = (CRGB){
+                        .r = 0,
+                        .g = 0,
+                        .b = 0
+                    };
+                }
+
+                ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+                vTaskDelay(pdMS_TO_TICKS(500));
+            } else {
+                command_active_r = false;
+            }
         }
 
-        ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+        /*
+         * LEFT command:
+         * Blink the left-side detection LEDs green.
+         */
+        if (strcmp(pi_command_l, "LEFT") == 0) {
+            if  ((currTime - last_command_l_time) < pdMS_TO_TICKS(5000)){
+                command_active_l = true;
+                for (int i = LED_NUM_W_END; i < LED_NUM; i++) {
+                    ws2812_buffer[i] = (CRGB){
+                        .r = 0,
+                        .g = 50,
+                        .b = 0
+                    };
+                }
 
-        vTaskDelay(pdMS_TO_TICKS(500));
+                ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+                vTaskDelay(pdMS_TO_TICKS(500));
+
+                for (int i = LED_NUM_W_END; i < LED_NUM; i++) {
+                    ws2812_buffer[i] = (CRGB){
+                        .r = 0,
+                        .g = 0,
+                        .b = 0
+                    };
+                }
+
+                // pi_command_l[0] = '\0';
+                ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+                vTaskDelay(pdMS_TO_TICKS(500));
+            } else {
+                command_active_l = false;
+            }
+        }
+
+        /*
+         * CLOSE_LEFT command:
+         * Blink the left-side detection LEDs red.
+         */
+        else if (strcmp(pi_command_l, "CLOSE_LEFT") == 0) {
+            if  ((currTime - last_command_l_time) < pdMS_TO_TICKS(3000)){
+                command_active_l = true;
+                for (int i = LED_NUM_W_END; i < LED_NUM; i++) {
+                    ws2812_buffer[i] = (CRGB){
+                        .r = 50,
+                        .g = 0,
+                        .b = 0
+                    };
+                }
+
+                ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+                vTaskDelay(pdMS_TO_TICKS(500));
+
+                for (int i = LED_NUM_W_END; i < LED_NUM; i++) {
+                    ws2812_buffer[i] = (CRGB){
+                        .r = 0,
+                        .g = 0,
+                        .b = 0
+                    };
+                }
+
+                ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+                vTaskDelay(pdMS_TO_TICKS(500));
+            } else {
+                command_active_l = false;
+            }
+        }
+
+        /*
+         * DENY command:
+         * Blink both detection LED sections red.
+         */
+        if ((strcmp(pi_command_deny, "DENY") == 0)) {
+            if  ((currTime - last_command_deny_time) < pdMS_TO_TICKS(3000)){
+                command_active_l = true;
+                command_active_r = true;
+                for (int i = 0; i < LED_NUM_W_STR; i++) {
+                    ws2812_buffer[i] = (CRGB){
+                        .r = 50,
+                        .g = 0,
+                        .b = 0
+                    };
+                }
+
+                for (int i = LED_NUM_W_END; i < LED_NUM; i++) {
+                    ws2812_buffer[i] = (CRGB){
+                        .r = 50,
+                        .g = 0,
+                        .b = 0
+                    };
+                }
+
+                ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+                vTaskDelay(pdMS_TO_TICKS(500));
+
+                for (int i = 0; i < LED_NUM_W_STR; i++) {
+                    ws2812_buffer[i] = (CRGB){
+                        .r = 0,
+                        .g = 0,
+                        .b = 0
+                    };
+                }
+
+                for (int i = LED_NUM_W_END; i < LED_NUM; i++) {
+                    ws2812_buffer[i] = (CRGB){
+                        .r = 0,
+                        .g = 0,
+                        .b = 0
+                    };
+                }
+
+                ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+                vTaskDelay(pdMS_TO_TICKS(500));
+            }
+            else {
+                command_active_l = false;
+                command_active_r = false; 
+            }
+        }
+
+        /*
+         * Idle mode:
+         * This runs only when none of the commands above matched.
+         */
+        if (!command_active_r) {
+            for (int i = 0; i < LED_NUM_W_STR; i++) {
+                ws2812_buffer[i] = (CRGB){
+                    .r = 50,
+                    .g = 50,
+                    .b = 50
+                };
+            }
+
+            ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+        }
+
+        if (!command_active_l){
+             for (int i = LED_NUM_W_END; i < LED_NUM; i++) {
+                ws2812_buffer[i] = (CRGB){
+                    .r = 50,
+                    .g = 50,
+                    .b = 50
+                };
+            }
+            ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+        }
+
+        // Prevent the task from running continuously with no pause.
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
+
 
 void lux_data_task(void *arg){
     i2c_master_bus_handle_t bus_handle;

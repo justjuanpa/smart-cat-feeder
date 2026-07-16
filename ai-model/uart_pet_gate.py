@@ -65,6 +65,34 @@ def report_to_cloud(args, payload):
         print(f"Cloud ingest failed: {error}")
 
 
+def should_report_telemetry(telemetry_report_cache, payload, args):
+    raw_payload = payload.get("raw_payload", {})
+    if not raw_payload:
+        return True
+
+    key = ",".join(sorted(raw_payload.keys()))
+    value = tuple(sorted(raw_payload.items()))
+    now = time.monotonic()
+    previous = telemetry_report_cache.get(key)
+    is_lid_status = (
+        "left_access_lid" in raw_payload
+        or "right_access_lid" in raw_payload
+    )
+    value_changed = previous is None or previous["value"] != value
+    last_reported_at = previous["reported_at"] if previous is not None else None
+
+    if is_lid_status and value_changed:
+        telemetry_report_cache[key] = {"value": value, "reported_at": now}
+        return True
+
+    if last_reported_at is None or now - last_reported_at >= args.telemetry_report_interval:
+        telemetry_report_cache[key] = {"value": value, "reported_at": now}
+        return True
+
+    telemetry_report_cache[key] = {"value": value, "reported_at": last_reported_at}
+    return False
+
+
 def create_identity_pipeline(args):
     burst_recognition.FRAME_COUNT = args.frames
     burst_recognition.YOLO_CONFIDENCE_THRESHOLD = args.yolo_threshold
@@ -557,6 +585,12 @@ def main():
         help="Seconds to wait for OPENED_LEFT/RIGHT before allowing a command retry.",
     )
     parser.add_argument(
+        "--telemetry-report-interval",
+        type=float,
+        default=10.0,
+        help="Minimum seconds between cloud reports for repeated ESP32 telemetry.",
+    )
+    parser.add_argument(
         "--ingest-url",
         default=None,
         help="Supabase Edge Function URL. Defaults to PAWS_INGEST_URL.",
@@ -615,6 +649,7 @@ def main():
                     "latest_weight_grams": None,
                 },
             }
+            telemetry_report_cache = {}
 
             while True:
                 reset_stale_pending_bowls(bowl_state, args)
@@ -651,7 +686,12 @@ def main():
                         embedded_message["payload"],
                         args,
                     )
-                    report_to_cloud(args, embedded_message["payload"])
+                    if should_report_telemetry(
+                        telemetry_report_cache,
+                        embedded_message["payload"],
+                        args,
+                    ):
+                        report_to_cloud(args, embedded_message["payload"])
                     continue
 
                 if message != args.trigger_message:

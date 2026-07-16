@@ -158,7 +158,6 @@ void load_cell_enable_left(bool val){
         servoEnableLeft(false);
     } else {
         stepperEnableLeft(false);
-        servoEnableLeft(false);
     }
 }
 
@@ -170,7 +169,6 @@ void load_cell_enable_right(bool val){
         servoEnableRight(false);
     } else {
         stepperEnableRight(false);
-        servoEnableRight(false);
     }
 }
 

@@ -48,25 +48,33 @@ static void process_pi_command(char *command)
     printf("Recieved: %s\n", command);
     if (strcmp(command, "RIGHT") == 0 || strcmp(command, "ALLOW") == 0 || strcmp(command, "OPEN") == 0){ //if the raspberry pi says to open the right side
         vTaskDelay(pdMS_TO_TICKS(50));
+                led_receive_command_r(command);
         printf("Starting right dispense cycle\n");
         load_cell_enable_right(true);
     }
 
     if (strcmp(command, "LEFT") == 0){ //if the raspberry pi says to open the left side
+        led_receive_command_l(command);
         printf("Starting left dispense cycle\n");
         load_cell_enable_left(true);
     }
 
     if (strcmp(command, "DENY") == 0){
+        led_receive_command_r(command);
+        led_receive_command_l(command);
+
         printf("Vision denied access; not starting a dispense cycle\n");
     }
 
     if (strcmp(command, "CLOSE_LEFT") == 0){
+                led_receive_command_l(command);
         printf("Closing left lid by vision presence check\n");
         load_cell_enable_left(false);
     }
 
     if (strcmp(command, "CLOSE_RIGHT") == 0){
+                led_receive_command_r(command);
+
         printf("Closing right lid by vision presence check\n");
         load_cell_enable_right(false);
     }

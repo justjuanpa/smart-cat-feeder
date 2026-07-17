@@ -253,6 +253,7 @@ def check_pet_present_on_side(
     expected_pet,
     frame_count,
     min_accepted_frames,
+    save_debug,
 ):
     accepted = 0
     seen_any_pet_in_side = 0
@@ -260,8 +261,9 @@ def check_pet_present_on_side(
 
     for frame_index in range(1, frame_count + 1):
         frame = camera.capture_array()
-        side_roi_path = save_presence_side_roi(frame, side, frame_index)
-        print(f"Presence {side} frame {frame_index}: saved side ROI to {side_roi_path}")
+        if save_debug:
+            side_roi_path = save_presence_side_roi(frame, side, frame_index)
+            print(f"Presence {side} frame {frame_index}: saved side ROI to {side_roi_path}")
         yolo_results = yolo_model(frame, verbose=False)
         detections = []
 
@@ -523,6 +525,7 @@ def run_due_presence_checks(
             expected_pet=expected_pet,
             frame_count=args.presence_frames,
             min_accepted_frames=args.presence_min_accepted_frames,
+            save_debug=args.save_debug,
         )
 
         if present:

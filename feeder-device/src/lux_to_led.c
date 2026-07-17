@@ -401,30 +401,124 @@ void detection_led_task(void *para)
          * This runs only when none of the commands above matched.
          */
         if (!command_active_r) {
+             if (lux >= 120){
+                for (int i = 0; i < LED_NUM_W_STR; i++) {
+                    ws2812_buffer[i] = (CRGB){
+                        .r = 0,
+                        .g = 0,
+                        .b = 0
+                    };
+                }
+
+                ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+         }
+        else if (lux <= 120 && lux >= 85){
+           for (int i = 0; i < LED_NUM_W_STR; i++) {
+                ws2812_buffer[i] = (CRGB){
+                    .r = 25,
+                    .g = 24,
+                    .b = 21
+                };
+            }
+
+            ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+        }
+        else if (lux <= 85 && lux >= 60){
             for (int i = 0; i < LED_NUM_W_STR; i++) {
                 ws2812_buffer[i] = (CRGB){
                     .r = 50,
-                    .g = 50,
-                    .b = 50
+                    .g = 48,
+                    .b = 40
                 };
             }
 
             ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+        }
+        else if (lux <= 60 && lux >= 35){
+            for (int i = 0; i < LED_NUM_W_STR; i++) {
+                ws2812_buffer[i] = (CRGB){
+                    .r = 75,
+                    .g = 72,
+                    .b = 60
+                };
+            }
+
+            ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+        }
+        else if (lux <= 35 && lux >= 0){
+           for (int i = 0; i < LED_NUM_W_STR; i++) {
+                ws2812_buffer[i] = (CRGB){
+                    .r = 100,
+                    .g = 96,
+                    .b = 80
+                };
+            }
+
+            ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+        }
+            
         }
 
         if (!command_active_l){
-             for (int i = LED_NUM_W_END; i < LED_NUM; i++) {
+            if (lux >= 120){
+                for (int i = LED_NUM_W_END; i < LED_NUM; i++) {
+                    ws2812_buffer[i] = (CRGB){
+                        .r = 0,
+                        .g = 0,
+                        .b = 0
+                    };
+                }
+
+                ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+         }
+        else if (lux <= 120 && lux >= 85){
+           for (int i = LED_NUM_W_END; i < LED_NUM; i++) {
                 ws2812_buffer[i] = (CRGB){
-                    .r = 50,
-                    .g = 50,
-                    .b = 50
+                    .r = 25,
+                    .g = 24,
+                    .b = 20
                 };
             }
+
             ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+        }
+        else if (lux <= 85 && lux >= 60){
+            for (int i = LED_NUM_W_END; i < LED_NUM; i++){
+                ws2812_buffer[i] = (CRGB){
+                    .r = 50,
+                    .g = 48,
+                    .b = 40
+                };
+            }
+
+            ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+        }
+        else if (lux <= 60 && lux >= 35){
+            for (int i = LED_NUM_W_END; i < LED_NUM; i++){
+                ws2812_buffer[i] = (CRGB){
+                    .r = 75,
+                    .g = 72,
+                    .b = 60
+                };
+            }
+
+            ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+        }
+        else if (lux <= 35 && lux >= 0){
+           for (int i = LED_NUM_W_END; i < LED_NUM; i++) {
+                ws2812_buffer[i] = (CRGB){
+                    .r = 100,
+                    .g = 96,
+                    .b = 80
+                };
+            }
+
+            ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+        }
         }
 
         // Prevent the task from running continuously with no pause.
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
@@ -499,37 +593,37 @@ void LUX_to_LED_task(void *para){ //brightness next lux
 
     while (1) {
        //if (pir_on_off){ //true on 
-         if (lux >= 100){
+         if (lux >= 120){
             for (int i = LED_NUM_W_STR; i < LED_NUM_W_END; i++){
                 ws2812_buffer[i] = (CRGB) {.r=0, .g=0, .b=0};
             }
             led_val = 0; //the room is well lit
             ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
-        }
-        else if (lux <= 100 && lux >= 85){
+         }
+        else if (lux <= 120 && lux >= 85){
             for (int i = LED_NUM_W_STR; i < LED_NUM_W_END; i++){
-                ws2812_buffer[i] = (CRGB) {.r=25, .g=25, .b=25};
+                ws2812_buffer[i] = (CRGB) {.r=25, .g=24, .b=20};
             }
             led_val = 25;
             ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
         }
         else if (lux <= 85 && lux >= 60){
             for (int i = LED_NUM_W_STR; i < LED_NUM_W_END; i++){
-                ws2812_buffer[i] = (CRGB) {.r=50, .g=50, .b=50};
+                ws2812_buffer[i] = (CRGB) {.r=50, .g=48, .b=40};
             }
             led_val = 50;
             ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
         }
         else if (lux <= 60 && lux >= 35){
             for (int i = LED_NUM_W_STR; i < LED_NUM_W_END; i++){
-                ws2812_buffer[i] = (CRGB) {.r=75, .g=75, .b=75};
+                ws2812_buffer[i] = (CRGB) {.r=75, .g=72, .b=60};
             }
             led_val = 75;
             ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update()); 
         }
         else if (lux <= 35 && lux >= 0){
             for (int i = LED_NUM_W_STR; i < LED_NUM_W_END; i++){
-                ws2812_buffer[i] = (CRGB) {.r=100, .g=100, .b=100};
+                ws2812_buffer[i] = (CRGB) {.r=100, .g=96, .b=80};
             }
             led_val = 100;
             ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
@@ -543,8 +637,7 @@ void LUX_to_LED_task(void *para){ //brightness next lux
         //     led_val = 0;
         //     ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
         // }
-
-                    vTaskDelay(pdMS_TO_TICKS(100));
+        vTaskDelay(pdMS_TO_TICKS(100));
 
     } 
    

@@ -79,7 +79,7 @@ def main():
     )
     parser.add_argument(
         "--event-type",
-        choices=["authorized", "denied", "dispensed", "consumed"],
+        choices=["authorized", "denied", "dispensed", "consumed", "scheduled_dry_run"],
         help="Optional feeding event type; omit for heartbeat-only status updates",
     )
     parser.add_argument("--label", help="Recognized pet label, such as Milo or Mimi")

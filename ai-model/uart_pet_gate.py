@@ -218,8 +218,9 @@ class ScheduleWorker:
             if run_key in self.handled_runs:
                 continue
 
-            self.handled_runs.add(run_key)
-            self._handle_due_schedule(schedule, due_at, run_key)
+            handled = self._handle_due_schedule(schedule, due_at, run_key)
+            if handled:
+                self.handled_runs.add(run_key)
 
     def _handle_due_schedule(self, schedule, due_at, run_key):
         pet = schedule_pet(schedule)
@@ -272,7 +273,7 @@ class ScheduleWorker:
 
         if self.args.enable_scheduled_dispense:
             if decision == "would_dispense":
-                self._claim_and_queue_command(
+                return self._claim_and_queue_command(
                     schedule=schedule,
                     pet_name=pet_name,
                     meal_name=meal_name,
@@ -283,9 +284,12 @@ class ScheduleWorker:
                     scheduled_for=scheduled_for,
                     run_key=run_key,
                 )
-                return
 
-            self._claim_skipped_run(
+            if decision in {"skipped_missing_weight", "skipped_stale_weight", "skipped_bowl_active"}:
+                print(f"{notes}; will retry while schedule window is still open")
+                return False
+
+            return self._claim_skipped_run(
                 schedule=schedule,
                 pet_name=pet_name,
                 meal_name=meal_name,
@@ -297,7 +301,6 @@ class ScheduleWorker:
                 decision=decision,
                 notes=notes,
             )
-            return
 
         print(notes)
         queue_cloud_report(
@@ -323,6 +326,7 @@ class ScheduleWorker:
                 },
             },
         )
+        return decision not in {"skipped_missing_weight", "skipped_stale_weight", "skipped_bowl_active"}
 
     def _claim_and_queue_command(
         self,
@@ -338,8 +342,7 @@ class ScheduleWorker:
     ):
         if not self.args.claim_schedule_run_url:
             print("Scheduled dispense skipped: PAWS_CLAIM_SCHEDULE_RUN_URL is not configured")
-            self.handled_runs.discard(run_key)
-            return
+            return False
 
         notes = (
             f"Scheduled meal command: {meal_name} for {pet_name} will dispense "
@@ -368,17 +371,15 @@ class ScheduleWorker:
             )
         except Exception as error:
             print(f"Schedule run claim failed: {error}")
-            self.handled_runs.discard(run_key)
-            return
+            return False
 
         if status < 200 or status >= 300:
             print(f"Schedule run claim <= HTTP {status}: {response}")
-            self.handled_runs.discard(run_key)
-            return
+            return False
 
         if not response.get("claimed"):
             print(f"Scheduled meal already claimed; skipping {meal_name} for {pet_name}")
-            return
+            return True
 
         command = f"FEED_{side} {int(round(target_grams))}"
         try:
@@ -398,9 +399,10 @@ class ScheduleWorker:
             )
         except queue.Full:
             print(f"Scheduled command queue full; could not send {command}")
-            return
+            return False
 
         print(f"{notes}; queued UART command {command}")
+        return True
 
     def _claim_skipped_run(
         self,
@@ -417,7 +419,7 @@ class ScheduleWorker:
     ):
         if not self.args.claim_schedule_run_url:
             print(notes)
-            return
+            return True
 
         try:
             status, response = claim_schedule_run(
@@ -440,17 +442,18 @@ class ScheduleWorker:
             )
         except Exception as error:
             print(f"Schedule skipped-run claim failed: {error}")
-            return
+            return False
 
         if status < 200 or status >= 300:
             print(f"Schedule skipped-run claim <= HTTP {status}: {response}")
-            return
+            return False
 
         if response.get("claimed"):
             print(notes)
-            return
+            return True
 
         print(f"Scheduled meal already claimed; skipping {meal_name} for {pet_name}")
+        return True
 
     def _run_payload(
         self,

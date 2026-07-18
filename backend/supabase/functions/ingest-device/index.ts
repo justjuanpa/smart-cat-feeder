@@ -1,6 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.108.1';
 
-type FeedingEventType = 'authorized' | 'denied' | 'dispensed' | 'consumed';
+type FeedingEventType = 'authorized' | 'denied' | 'dispensed' | 'consumed' | 'scheduled_dry_run';
 
 type DevicePayload = {
   serial_number?: string;
@@ -26,7 +26,13 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-const eventTypes = new Set<FeedingEventType>(['authorized', 'denied', 'dispensed', 'consumed']);
+const eventTypes = new Set<FeedingEventType>([
+  'authorized',
+  'denied',
+  'dispensed',
+  'consumed',
+  'scheduled_dry_run',
+]);
 
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') {

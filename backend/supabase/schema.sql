@@ -69,7 +69,7 @@ create table if not exists public.feeding_events (
   device_id uuid references public.devices(id) on delete set null,
   pet_id uuid references public.pets(id) on delete set null,
   event_type text not null
-    check (event_type in ('authorized', 'denied', 'dispensed', 'consumed', 'manual')),
+    check (event_type in ('authorized', 'denied', 'dispensed', 'consumed', 'manual', 'scheduled_dry_run')),
   occurred_at timestamptz not null default now(),
   authorized boolean,
   amount_grams numeric(8, 2) check (amount_grams is null or amount_grams >= 0),

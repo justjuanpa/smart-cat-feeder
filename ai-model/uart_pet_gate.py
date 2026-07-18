@@ -536,6 +536,18 @@ def as_float(value):
         return 0.0
 
 
+def delivered_grams_from_context(state, scheduled_context):
+    latest_weight = state.get("latest_weight_grams")
+    if scheduled_context is None:
+        return latest_weight
+
+    starting_weight = scheduled_context.get("starting_bowl_weight_grams")
+    if latest_weight is not None and starting_weight is not None:
+        return max(0, round(latest_weight - starting_weight, 2))
+
+    return scheduled_context.get("grams_needed", latest_weight)
+
+
 def due_datetime(scheduled_time, now):
     if not scheduled_time:
         return None
@@ -766,12 +778,23 @@ def reset_stale_pending_bowls(bowl_state, args):
             state["pending_since"] = now
             continue
 
-        if now - pending_since < args.pending_timeout:
+        is_scheduled_dispense = state.get("scheduled_context") is not None
+        pending_timeout = (
+            args.scheduled_pending_timeout
+            if is_scheduled_dispense
+            else args.pending_timeout
+        )
+        if now - pending_since < pending_timeout:
             continue
 
+        expected_message = (
+            f"OPENED_{side}/DISPENSED_{side}"
+            if is_scheduled_dispense
+            else f"OPENED_{side}"
+        )
         print(
             f"{side} bowl pending for {now - pending_since:.1f}s "
-            f"without OPENED_{side}; resetting to closed"
+            f"without {expected_message}; resetting to closed"
         )
         state["status"] = "closed"
         state["misses"] = 0
@@ -859,14 +882,17 @@ def mark_scheduled_dispense_complete(bowl_state, side, args):
         else SIDE_PETS[side]
     )
     amount_grams = (
-        scheduled_context.get("grams_needed")
-        if scheduled_context is not None
-        else state.get("latest_weight_grams")
+        delivered_grams_from_context(state, scheduled_context)
     )
     meal_name = (
         scheduled_context.get("meal_name")
         if scheduled_context is not None
-        else "scheduled meal"
+        else None
+    )
+    notes = (
+        f"Scheduled meal {meal_name} dispensed into {side} bowl"
+        if meal_name
+        else f"Scheduled meal dispensed into {side} bowl"
     )
 
     state["status"] = "closed"
@@ -883,7 +909,7 @@ def mark_scheduled_dispense_complete(bowl_state, side, args):
             "authorized": True,
             "recognition_label": pet_name,
             "amount_grams": amount_grams,
-            "notes": f"Scheduled meal {meal_name} dispensed into {side} bowl",
+            "notes": notes,
             "raw_payload": {
                 "side": side,
                 "message": f"DISPENSED_{side}",
@@ -1233,6 +1259,12 @@ def main():
         type=float,
         default=15.0,
         help="Seconds to wait for OPENED_LEFT/RIGHT before allowing a command retry.",
+    )
+    parser.add_argument(
+        "--scheduled-pending-timeout",
+        type=float,
+        default=60.0,
+        help="Seconds to wait for DISPENSED_LEFT/RIGHT after a scheduled FEED command.",
     )
     parser.add_argument(
         "--close-telemetry-grace",

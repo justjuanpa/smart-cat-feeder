@@ -73,6 +73,8 @@ Cloud writes performed by `uart_pet_gate.py`:
   starts open-lid presence checks
 - `DISPENSED_LEFT` / `DISPENSED_RIGHT` received: writes a scheduled
   `dispensed` event without marking the access lid open
+- scheduled `FEED_LEFT` / `FEED_RIGHT` commands use a longer pending timeout
+  because the ESP32 may need time to dispense and settle the load-cell reading
 - `Left Bowl Grams: N` / `Right Bowl Grams: N` received: updates the matching device bowl weight
 - `Left Access Lid: ...`, `Right Access Lid: ...`, and `Ledstrip: ...` are parsed as telemetry notes
 

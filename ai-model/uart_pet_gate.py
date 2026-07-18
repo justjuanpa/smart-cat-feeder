@@ -42,6 +42,10 @@ OPENED_MESSAGES = {
     "OPENED_LEFT": "LEFT",
     "OPENED_RIGHT": "RIGHT",
 }
+DISPENSED_MESSAGES = {
+    "DISPENSED_LEFT": "LEFT",
+    "DISPENSED_RIGHT": "RIGHT",
+}
 CLOSED_MESSAGES = {
     "CLOSED_LEFT": "LEFT",
     "CLOSED_RIGHT": "RIGHT",
@@ -846,6 +850,52 @@ def mark_bowl_closed(bowl_state, side, message):
     state["scheduled_context"] = None
 
 
+def mark_scheduled_dispense_complete(bowl_state, side, args):
+    state = bowl_state[side]
+    scheduled_context = state.get("scheduled_context")
+    pet_name = (
+        scheduled_context.get("pet_name")
+        if scheduled_context is not None
+        else SIDE_PETS[side]
+    )
+    amount_grams = (
+        scheduled_context.get("grams_needed")
+        if scheduled_context is not None
+        else state.get("latest_weight_grams")
+    )
+    meal_name = (
+        scheduled_context.get("meal_name")
+        if scheduled_context is not None
+        else "scheduled meal"
+    )
+
+    state["status"] = "closed"
+    state["misses"] = 0
+    state["next_check_at"] = None
+    state["pending_since"] = None
+    state["close_sent_at"] = None
+
+    print(f"{side} scheduled dispense complete; lid remains closed")
+    queue_cloud_report(
+        args,
+        {
+            "event_type": "dispensed",
+            "authorized": True,
+            "recognition_label": pet_name,
+            "amount_grams": amount_grams,
+            "notes": f"Scheduled meal {meal_name} dispensed into {side} bowl",
+            "raw_payload": {
+                "side": side,
+                "message": f"DISPENSED_{side}",
+                "latest_weight_grams": state.get("latest_weight_grams"),
+                "scheduled_context": scheduled_context,
+                "access_lid_opened": False,
+            },
+        },
+    )
+    state["scheduled_context"] = None
+
+
 def run_queued_scheduled_commands(connection, bowl_state, command_queue):
     while True:
         try:
@@ -1382,6 +1432,14 @@ def main():
 
                 if message in OPENED_MESSAGES:
                     mark_bowl_open(bowl_state, OPENED_MESSAGES[message], args)
+                    continue
+
+                if message in DISPENSED_MESSAGES:
+                    mark_scheduled_dispense_complete(
+                        bowl_state,
+                        DISPENSED_MESSAGES[message],
+                        args,
+                    )
                     continue
 
                 if message in CLOSED_MESSAGES:

@@ -51,14 +51,14 @@ static void process_pi_command(char *command)
         vTaskDelay(pdMS_TO_TICKS(50));
         led_receive_command_r("RIGHT");
         printf("Starting scheduled right dispense cycle to %d g\n", target_grams);
-        load_cell_start_right_target(target_grams);
+        load_cell_start_right_target(target_grams, false);
         return;
     }
 
     if (sscanf(command, "FEED_LEFT %d", &target_grams) == 1){
         led_receive_command_l("LEFT");
         printf("Starting scheduled left dispense cycle to %d g\n", target_grams);
-        load_cell_start_left_target(target_grams);
+        load_cell_start_left_target(target_grams, false);
         return;
     }
 

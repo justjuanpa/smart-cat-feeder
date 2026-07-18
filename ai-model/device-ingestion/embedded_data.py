@@ -8,6 +8,7 @@ def parse_embedded_message(line):
         grams = parse_int_value(line)
         if grams is None:
             return None
+        grams = clamp_bowl_grams(grams)
 
         return {
             "kind": "telemetry",
@@ -25,6 +26,7 @@ def parse_embedded_message(line):
         grams = parse_int_value(line)
         if grams is None:
             return None
+        grams = clamp_bowl_grams(grams)
 
         return {
             "kind": "telemetry",
@@ -89,3 +91,7 @@ def parse_text_value(line):
         return line.split(":", 1)[1].strip()
     except IndexError:
         return ""
+
+
+def clamp_bowl_grams(grams):
+    return max(0, grams)

@@ -19,6 +19,9 @@
 #define DEFAULT_RIGHT_TARGET_GRAMS 5
 #define DISPENSE_STOP_BUFFER_GRAMS 3
 #define TARGET_CONFIRMATION_READINGS 2
+#define DISPENSE_PULSE_ZONE_GRAMS 8
+#define DISPENSE_PULSE_MS 120
+#define DISPENSE_PULSE_SETTLE_MS 700
 
 static volatile bool left_dispense_enabled = false;
 static volatile bool right_dispense_enabled = false;
@@ -67,6 +70,11 @@ static int dispense_stop_threshold(int target_grams)
 {
     int threshold = target_grams - DISPENSE_STOP_BUFFER_GRAMS;
     return threshold < 0 ? 0 : threshold;
+}
+
+static bool should_pulse_dispense(int grams, int target_grams)
+{
+    return (target_grams - grams) <= DISPENSE_PULSE_ZONE_GRAMS;
 }
 
 esp_err_t hx711_init(hx711_t *dev)
@@ -249,13 +257,28 @@ static void update_left_dispense(bool ready, int grams)
 
     if (grams < stop_threshold) {
         left_target_readings = 0;
+        servoEnableLeft(false);
+
+        if (should_pulse_dispense(grams, target_grams)) {
+            printf(
+                "Left bowl pulse dispensing: %d/%d g (stop threshold %d g)\n",
+                grams,
+                target_grams,
+                stop_threshold
+            );
+            stepperEnableLeft(true);
+            vTaskDelay(pdMS_TO_TICKS(DISPENSE_PULSE_MS));
+            stepperEnableLeft(false);
+            vTaskDelay(pdMS_TO_TICKS(DISPENSE_PULSE_SETTLE_MS));
+            return;
+        }
+
         printf(
             "Left bowl dispensing: %d/%d g (stop threshold %d g)\n",
             grams,
             target_grams,
             stop_threshold
         );
-        servoEnableLeft(false);
         stepperEnableLeft(true);
         return;
     }
@@ -280,7 +303,9 @@ static void update_left_dispense(bool ready, int grams)
         servoEnableLeft(true);
         uart_comm_send_string("OPENED_LEFT\r\n");
     } else {
-        uart_comm_send_string("DISPENSED_LEFT\r\n");
+        char message[32];
+        snprintf(message, sizeof(message), "DISPENSED_LEFT %d\r\n", grams);
+        uart_comm_send_string(message);
     }
     left_open_lid_on_complete = true;
 }
@@ -302,13 +327,28 @@ static void update_right_dispense(bool ready, int grams)
 
     if (grams < stop_threshold) {
         right_target_readings = 0;
+        servoEnableRight(false);
+
+        if (should_pulse_dispense(grams, target_grams)) {
+            printf(
+                "Right bowl pulse dispensing: %d/%d g (stop threshold %d g)\n",
+                grams,
+                target_grams,
+                stop_threshold
+            );
+            stepperEnableRight(true);
+            vTaskDelay(pdMS_TO_TICKS(DISPENSE_PULSE_MS));
+            stepperEnableRight(false);
+            vTaskDelay(pdMS_TO_TICKS(DISPENSE_PULSE_SETTLE_MS));
+            return;
+        }
+
         printf(
             "Right bowl dispensing: %d/%d g (stop threshold %d g)\n",
             grams,
             target_grams,
             stop_threshold
         );
-        servoEnableRight(false);
         stepperEnableRight(true);
         return;
     }
@@ -333,7 +373,9 @@ static void update_right_dispense(bool ready, int grams)
         servoEnableRight(true);
         uart_comm_send_string("OPENED_RIGHT\r\n");
     } else {
-        uart_comm_send_string("DISPENSED_RIGHT\r\n");
+        char message[32];
+        snprintf(message, sizeof(message), "DISPENSED_RIGHT %d\r\n", grams);
+        uart_comm_send_string(message);
     }
     right_open_lid_on_complete = true;
 }
@@ -397,11 +439,11 @@ void load_cell_task(void *parameters){
             printf("Raw = %ld, Weight = %d g for right load cell\n", (long)raw_2, rounded_grams_2);
         }
 
-        update_left_dispense(ready_1, rounded_grams_1);
-        update_right_dispense(ready_2, rounded_grams_2);
-
         gramDataL = rounded_grams_1;
         gramDateR = rounded_grams_2;
+
+        update_left_dispense(ready_1, rounded_grams_1);
+        update_right_dispense(ready_2, rounded_grams_2);
 
         vTaskDelay(pdMS_TO_TICKS(500));
     }

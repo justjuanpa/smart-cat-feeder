@@ -548,6 +548,22 @@ def delivered_grams_from_context(state, scheduled_context):
     return scheduled_context.get("grams_needed", latest_weight)
 
 
+def parse_dispensed_message(message):
+    parts = message.split()
+    if not parts:
+        return None
+
+    side = DISPENSED_MESSAGES.get(parts[0])
+    if side is None:
+        return None
+
+    final_weight_grams = None
+    if len(parts) >= 2:
+        final_weight_grams = as_float(parts[1])
+
+    return side, final_weight_grams
+
+
 def due_datetime(scheduled_time, now):
     if not scheduled_time:
         return None
@@ -873,8 +889,12 @@ def mark_bowl_closed(bowl_state, side, message):
     state["scheduled_context"] = None
 
 
-def mark_scheduled_dispense_complete(bowl_state, side, args):
+def mark_scheduled_dispense_complete(bowl_state, side, args, final_weight_grams=None):
     state = bowl_state[side]
+    if final_weight_grams is not None:
+        state["latest_weight_grams"] = final_weight_grams
+        state["latest_weight_updated_at"] = time.monotonic()
+
     scheduled_context = state.get("scheduled_context")
     pet_name = (
         scheduled_context.get("pet_name")
@@ -914,6 +934,7 @@ def mark_scheduled_dispense_complete(bowl_state, side, args):
                 "side": side,
                 "message": f"DISPENSED_{side}",
                 "latest_weight_grams": state.get("latest_weight_grams"),
+                "final_weight_grams": final_weight_grams,
                 "scheduled_context": scheduled_context,
                 "access_lid_opened": False,
             },
@@ -1466,11 +1487,14 @@ def main():
                     mark_bowl_open(bowl_state, OPENED_MESSAGES[message], args)
                     continue
 
-                if message in DISPENSED_MESSAGES:
+                dispensed_message = parse_dispensed_message(message)
+                if dispensed_message is not None:
+                    side, final_weight_grams = dispensed_message
                     mark_scheduled_dispense_complete(
                         bowl_state,
-                        DISPENSED_MESSAGES[message],
+                        side,
                         args,
+                        final_weight_grams,
                     )
                     continue
 

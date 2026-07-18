@@ -81,6 +81,26 @@ create table if not exists public.feeding_events (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.schedule_runs (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null references public.profiles(id) on delete cascade,
+  device_id uuid references public.devices(id) on delete set null,
+  schedule_id uuid references public.feeding_schedules(id) on delete set null,
+  pet_id uuid references public.pets(id) on delete set null,
+  scheduled_for timestamptz not null,
+  status text not null
+    check (status in ('claimed', 'skipped', 'command_sent', 'dispensed', 'failed')),
+  target_grams numeric(8, 2) not null check (target_grams >= 0),
+  starting_bowl_weight_grams numeric(8, 2),
+  grams_needed numeric(8, 2) check (grams_needed is null or grams_needed >= 0),
+  side text check (side in ('LEFT', 'RIGHT')),
+  notes text,
+  raw_payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (schedule_id, scheduled_for)
+);
+
 create table if not exists public.device_status (
   device_id uuid primary key references public.devices(id) on delete cascade,
   owner_id uuid not null references public.profiles(id) on delete cascade,
@@ -105,6 +125,10 @@ create index if not exists feeding_events_owner_id_occurred_at_idx
   on public.feeding_events(owner_id, occurred_at desc);
 create index if not exists feeding_events_pet_id_occurred_at_idx
   on public.feeding_events(pet_id, occurred_at desc);
+create index if not exists schedule_runs_owner_id_scheduled_for_idx
+  on public.schedule_runs(owner_id, scheduled_for desc);
+create index if not exists schedule_runs_device_id_scheduled_for_idx
+  on public.schedule_runs(device_id, scheduled_for desc);
 create index if not exists device_status_owner_id_idx on public.device_status(owner_id);
 
 create or replace function public.set_updated_at()
@@ -142,12 +166,18 @@ create trigger set_device_status_updated_at
 before update on public.device_status
 for each row execute function public.set_updated_at();
 
+drop trigger if exists set_schedule_runs_updated_at on public.schedule_runs;
+create trigger set_schedule_runs_updated_at
+before update on public.schedule_runs
+for each row execute function public.set_updated_at();
+
 alter table public.profiles enable row level security;
 alter table public.devices enable row level security;
 alter table public.pets enable row level security;
 alter table public.pet_images enable row level security;
 alter table public.feeding_schedules enable row level security;
 alter table public.feeding_events enable row level security;
+alter table public.schedule_runs enable row level security;
 alter table public.device_status enable row level security;
 
 create policy "Users can read own profile"
@@ -185,6 +215,10 @@ with check (auth.uid() = owner_id);
 
 create policy "Users can read own feeding events"
 on public.feeding_events for select
+using (auth.uid() = owner_id);
+
+create policy "Users can read own schedule runs"
+on public.schedule_runs for select
 using (auth.uid() = owner_id);
 
 create policy "Users can insert own manual feeding events"

@@ -15,11 +15,13 @@
 #define HX711_SCK_2 GPIO_NUM_8 //right load cell 
 
 #define LOAD_CELL_SAMPLES 15
-#define LEFT_TARGET_GRAMS 5
-#define RIGHT_TARGET_GRAMS 5
+#define DEFAULT_LEFT_TARGET_GRAMS 5
+#define DEFAULT_RIGHT_TARGET_GRAMS 5
 
 static volatile bool left_dispense_enabled = false;
 static volatile bool right_dispense_enabled = false;
+static volatile int left_target_grams = DEFAULT_LEFT_TARGET_GRAMS;
+static volatile int right_target_grams = DEFAULT_RIGHT_TARGET_GRAMS;
 
 int gramDataL;
 int gramDateR;
@@ -151,6 +153,10 @@ void load_cell_task_en(bool val){
 }
 
 void load_cell_enable_left(bool val){
+    if (val) {
+        left_target_grams = DEFAULT_LEFT_TARGET_GRAMS;
+    }
+
     left_dispense_enabled = val;
 
     if (!val) {
@@ -162,6 +168,10 @@ void load_cell_enable_left(bool val){
 }
 
 void load_cell_enable_right(bool val){
+    if (val) {
+        right_target_grams = DEFAULT_RIGHT_TARGET_GRAMS;
+    }
+
     right_dispense_enabled = val;
 
     if (!val) {
@@ -170,6 +180,26 @@ void load_cell_enable_right(bool val){
     } else {
         stepperEnableRight(false);
     }
+}
+
+void load_cell_start_left_target(int target_grams){
+    if (target_grams < 0) {
+        target_grams = 0;
+    }
+
+    left_target_grams = target_grams;
+    left_dispense_enabled = true;
+    stepperEnableLeft(false);
+}
+
+void load_cell_start_right_target(int target_grams){
+    if (target_grams < 0) {
+        target_grams = 0;
+    }
+
+    right_target_grams = target_grams;
+    right_dispense_enabled = true;
+    stepperEnableRight(false);
 }
 
 void load_cell_stop_all(void){
@@ -189,14 +219,16 @@ static void update_left_dispense(bool ready, int grams)
         return;
     }
 
-    if (grams < LEFT_TARGET_GRAMS) {
-        printf("Left bowl dispensing: %d/%d g\n", grams, LEFT_TARGET_GRAMS);
+    int target_grams = left_target_grams;
+
+    if (grams < target_grams) {
+        printf("Left bowl dispensing: %d/%d g\n", grams, target_grams);
         servoEnableLeft(false);
         stepperEnableLeft(true);
         return;
     }
 
-    printf("Left bowl target reached: %d/%d g\n", grams, LEFT_TARGET_GRAMS);
+    printf("Left bowl target reached: %d/%d g\n", grams, target_grams);
     left_dispense_enabled = false;
     stepperEnableLeft(false);
     servoEnableLeft(true);
@@ -215,14 +247,16 @@ static void update_right_dispense(bool ready, int grams)
         return;
     }
 
-    if (grams < RIGHT_TARGET_GRAMS) {
-        printf("Right bowl dispensing: %d/%d g\n", grams, RIGHT_TARGET_GRAMS);
+    int target_grams = right_target_grams;
+
+    if (grams < target_grams) {
+        printf("Right bowl dispensing: %d/%d g\n", grams, target_grams);
         servoEnableRight(false);
         stepperEnableRight(true);
         return;
     }
 
-    printf("Right bowl target reached: %d/%d g\n", grams, RIGHT_TARGET_GRAMS);
+    printf("Right bowl target reached: %d/%d g\n", grams, target_grams);
     right_dispense_enabled = false;
     stepperEnableRight(false);
     servoEnableRight(true);

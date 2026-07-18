@@ -20,7 +20,7 @@ sys.path.append(str(DEVICE_INGESTION_DIR))
 sys.path.append(str(PET_RECOGNITION_DIR))
 
 from paws_ingest_client import post_ingest
-from paws_schedule_client import fetch_device_schedules
+from paws_schedule_client import claim_schedule_run, fetch_device_schedules
 from embedded_data import parse_embedded_message
 import live_burst_recognition as burst_recognition
 
@@ -143,28 +143,34 @@ class CloudReporter:
                 self.queue.task_done()
 
 
-class ScheduleDryRunWorker:
-    def __init__(self, args, bowl_state, bowl_state_lock):
+class ScheduleWorker:
+    def __init__(self, args, bowl_state, bowl_state_lock, command_queue):
         self.args = args
         self.bowl_state = bowl_state
         self.bowl_state_lock = bowl_state_lock
-        self.enabled = bool(args.schedule_url and args.device_token and not args.no_schedule_dry_run)
+        self.command_queue = command_queue
+        self.enabled = bool(
+            args.schedule_url
+            and args.device_token
+            and (args.enable_scheduled_dispense or not args.no_schedule_dry_run)
+        )
         self.thread = None
         self.stop_requested = threading.Event()
         self.handled_runs = set()
 
     def start(self):
         if not self.enabled:
-            print("Schedule dry-run worker disabled")
+            print("Schedule worker disabled")
             return
 
         self.thread = threading.Thread(
             target=self._run,
-            name="schedule-dry-run",
+            name="schedule-worker",
             daemon=True,
         )
         self.thread.start()
-        print(f"Schedule dry-run worker started; polling every {self.args.schedule_check_interval}s")
+        mode = "dispense" if self.args.enable_scheduled_dispense else "dry-run"
+        print(f"Schedule worker started in {mode} mode; polling every {self.args.schedule_check_interval}s")
 
     def stop(self):
         if not self.enabled or self.thread is None:
@@ -173,7 +179,7 @@ class ScheduleDryRunWorker:
         self.stop_requested.set()
         self.thread.join(timeout=2.0)
         if self.thread.is_alive():
-            print("Schedule dry-run worker still stopping; exiting without waiting")
+            print("Schedule worker still stopping; exiting without waiting")
 
     def _run(self):
         while not self.stop_requested.is_set():
@@ -196,7 +202,7 @@ class ScheduleDryRunWorker:
             return
 
         schedules = response.get("schedules", [])
-        now = dt.datetime.now()
+        now = dt.datetime.now().astimezone()
         self._prune_old_runs(now)
 
         for schedule in schedules:
@@ -213,14 +219,15 @@ class ScheduleDryRunWorker:
                 continue
 
             self.handled_runs.add(run_key)
-            self._handle_due_schedule(schedule, due_at)
+            self._handle_due_schedule(schedule, due_at, run_key)
 
-    def _handle_due_schedule(self, schedule, due_at):
+    def _handle_due_schedule(self, schedule, due_at, run_key):
         pet = schedule_pet(schedule)
         pet_name = (pet.get("name") or "").strip()
         side = PET_COMMANDS.get(pet_name.lower())
         target_grams = as_float(schedule.get("portion_grams"))
         meal_name = schedule.get("meal_name") or "Scheduled meal"
+        scheduled_for = due_at.isoformat()
 
         if side is None:
             notes = f"Scheduled meal dry run skipped: no bowl mapping for {pet_name or 'unknown pet'}"
@@ -229,7 +236,15 @@ class ScheduleDryRunWorker:
             grams_needed = None
         else:
             current_weight, weight_age = self._latest_weight(side)
-            if current_weight is None:
+            bowl_status = self._bowl_status(side)
+            if bowl_status in {"pending", "open", "closing"}:
+                notes = (
+                    f"Scheduled meal dry run skipped: {side.lower()} bowl is already "
+                    f"{bowl_status}"
+                )
+                decision = "skipped_bowl_active"
+                grams_needed = None
+            elif current_weight is None:
                 notes = f"Scheduled meal dry run skipped: no {side.lower()} bowl weight available"
                 decision = "skipped_missing_weight"
                 grams_needed = None
@@ -254,6 +269,35 @@ class ScheduleDryRunWorker:
                 )
                 decision = "skipped_enough_food"
                 grams_needed = 0
+
+        if self.args.enable_scheduled_dispense:
+            if decision == "would_dispense":
+                self._claim_and_queue_command(
+                    schedule=schedule,
+                    pet_name=pet_name,
+                    meal_name=meal_name,
+                    side=side,
+                    target_grams=target_grams,
+                    current_weight=current_weight,
+                    grams_needed=grams_needed,
+                    scheduled_for=scheduled_for,
+                    run_key=run_key,
+                )
+                return
+
+            self._claim_skipped_run(
+                schedule=schedule,
+                pet_name=pet_name,
+                meal_name=meal_name,
+                side=side,
+                target_grams=target_grams,
+                current_weight=current_weight,
+                grams_needed=grams_needed,
+                scheduled_for=scheduled_for,
+                decision=decision,
+                notes=notes,
+            )
+            return
 
         print(notes)
         queue_cloud_report(
@@ -280,6 +324,167 @@ class ScheduleDryRunWorker:
             },
         )
 
+    def _claim_and_queue_command(
+        self,
+        schedule,
+        pet_name,
+        meal_name,
+        side,
+        target_grams,
+        current_weight,
+        grams_needed,
+        scheduled_for,
+        run_key,
+    ):
+        if not self.args.claim_schedule_run_url:
+            print("Scheduled dispense skipped: PAWS_CLAIM_SCHEDULE_RUN_URL is not configured")
+            self.handled_runs.discard(run_key)
+            return
+
+        notes = (
+            f"Scheduled meal command: {meal_name} for {pet_name} will dispense "
+            f"{grams_needed:g}g to reach {target_grams:g}g"
+        )
+        claim_payload = self._run_payload(
+            schedule=schedule,
+            pet_name=pet_name,
+            meal_name=meal_name,
+            side=side,
+            target_grams=target_grams,
+            current_weight=current_weight,
+            grams_needed=grams_needed,
+            scheduled_for=scheduled_for,
+            status="command_sent",
+            notes=notes,
+            decision="command_sent",
+        )
+
+        try:
+            status, response = claim_schedule_run(
+                self.args.claim_schedule_run_url,
+                self.args.device_serial,
+                self.args.device_token,
+                claim_payload,
+            )
+        except Exception as error:
+            print(f"Schedule run claim failed: {error}")
+            self.handled_runs.discard(run_key)
+            return
+
+        if status < 200 or status >= 300:
+            print(f"Schedule run claim <= HTTP {status}: {response}")
+            self.handled_runs.discard(run_key)
+            return
+
+        if not response.get("claimed"):
+            print(f"Scheduled meal already claimed; skipping {meal_name} for {pet_name}")
+            return
+
+        command = f"FEED_{side} {int(round(target_grams))}"
+        try:
+            self.command_queue.put_nowait(
+                {
+                    "command": command,
+                    "side": side,
+                    "pet_name": pet_name,
+                    "meal_name": meal_name,
+                    "target_grams": target_grams,
+                    "current_weight_grams": current_weight,
+                    "grams_needed": grams_needed,
+                    "scheduled_for": scheduled_for,
+                    "schedule_id": schedule.get("id"),
+                    "schedule_run_id": response.get("schedule_run", {}).get("id"),
+                }
+            )
+        except queue.Full:
+            print(f"Scheduled command queue full; could not send {command}")
+            return
+
+        print(f"{notes}; queued UART command {command}")
+
+    def _claim_skipped_run(
+        self,
+        schedule,
+        pet_name,
+        meal_name,
+        side,
+        target_grams,
+        current_weight,
+        grams_needed,
+        scheduled_for,
+        decision,
+        notes,
+    ):
+        if not self.args.claim_schedule_run_url:
+            print(notes)
+            return
+
+        try:
+            status, response = claim_schedule_run(
+                self.args.claim_schedule_run_url,
+                self.args.device_serial,
+                self.args.device_token,
+                self._run_payload(
+                    schedule=schedule,
+                    pet_name=pet_name,
+                    meal_name=meal_name,
+                    side=side,
+                    target_grams=target_grams,
+                    current_weight=current_weight,
+                    grams_needed=grams_needed,
+                    scheduled_for=scheduled_for,
+                    status="skipped",
+                    notes=notes,
+                    decision=decision,
+                ),
+            )
+        except Exception as error:
+            print(f"Schedule skipped-run claim failed: {error}")
+            return
+
+        if status < 200 or status >= 300:
+            print(f"Schedule skipped-run claim <= HTTP {status}: {response}")
+            return
+
+        if response.get("claimed"):
+            print(notes)
+            return
+
+        print(f"Scheduled meal already claimed; skipping {meal_name} for {pet_name}")
+
+    def _run_payload(
+        self,
+        schedule,
+        pet_name,
+        meal_name,
+        side,
+        target_grams,
+        current_weight,
+        grams_needed,
+        scheduled_for,
+        status,
+        notes,
+        decision,
+    ):
+        return {
+            "schedule_id": schedule.get("id"),
+            "scheduled_for": scheduled_for,
+            "status": status,
+            "target_grams": target_grams,
+            "starting_bowl_weight_grams": current_weight,
+            "grams_needed": grams_needed,
+            "side": side,
+            "notes": notes,
+            "raw_payload": {
+                "pet_id": schedule.get("pet_id"),
+                "pet_name": pet_name or None,
+                "meal_name": meal_name,
+                "scheduled_time": schedule.get("scheduled_time"),
+                "decision": decision,
+                "dry_run": False,
+            },
+        }
+
     def _latest_weight(self, side):
         with self.bowl_state_lock:
             state = self.bowl_state[side]
@@ -290,6 +495,10 @@ class ScheduleDryRunWorker:
             return weight, None
 
         return weight, time.monotonic() - updated_at
+
+    def _bowl_status(self, side):
+        with self.bowl_state_lock:
+            return self.bowl_state[side].get("status")
 
     def _prune_old_runs(self, now):
         today_prefix = now.date().isoformat()
@@ -343,6 +552,16 @@ def derive_schedule_url(ingest_url):
 
     if ingest_url.endswith("/ingest-device"):
         return f"{ingest_url[:-len('/ingest-device')]}/device-schedules"
+
+    return None
+
+
+def derive_claim_schedule_run_url(ingest_url):
+    if not ingest_url:
+        return None
+
+    if ingest_url.endswith("/ingest-device"):
+        return f"{ingest_url[:-len('/ingest-device')]}/claim-schedule-run"
 
     return None
 
@@ -552,6 +771,7 @@ def reset_stale_pending_bowls(bowl_state, args):
         state["next_check_at"] = None
         state["pending_since"] = None
         state["close_sent_at"] = None
+        state["scheduled_context"] = None
 
 
 def update_bowl_weight_state(bowl_state, payload, bowl_state_lock=None):
@@ -573,6 +793,7 @@ def mark_bowl_open(bowl_state, side, args):
     if state["status"] == "open":
         return
 
+    scheduled_context = state.get("scheduled_context")
     state["status"] = "open"
     state["misses"] = 0
     state["next_check_at"] = time.monotonic() + args.presence_check_interval
@@ -585,16 +806,30 @@ def mark_bowl_open(bowl_state, side, args):
         {
             "event_type": "dispensed",
             "authorized": True,
-            "recognition_label": SIDE_PETS[side],
-            "amount_grams": state.get("latest_weight_grams"),
-            "notes": f"{side} bowl opened after dispense target",
+            "recognition_label": (
+                scheduled_context.get("pet_name")
+                if scheduled_context is not None
+                else SIDE_PETS[side]
+            ),
+            "amount_grams": (
+                scheduled_context.get("grams_needed")
+                if scheduled_context is not None
+                else state.get("latest_weight_grams")
+            ),
+            "notes": (
+                f"Scheduled meal {scheduled_context.get('meal_name')} opened {side} bowl"
+                if scheduled_context is not None
+                else f"{side} bowl opened after dispense target"
+            ),
             "raw_payload": {
                 "side": side,
                 "message": f"OPENED_{side}",
                 "latest_weight_grams": state.get("latest_weight_grams"),
+                "scheduled_context": scheduled_context,
             },
         },
     )
+    state["scheduled_context"] = None
 
 
 def mark_bowl_closed(bowl_state, side, message):
@@ -605,6 +840,41 @@ def mark_bowl_closed(bowl_state, side, message):
     state["next_check_at"] = None
     state["pending_since"] = None
     state["close_sent_at"] = None
+    state["scheduled_context"] = None
+
+
+def run_queued_scheduled_commands(connection, bowl_state, command_queue):
+    while True:
+        try:
+            command = command_queue.get_nowait()
+        except queue.Empty:
+            return
+
+        side = command["side"]
+        state = bowl_state[side]
+        if state["status"] in {"pending", "open", "closing"}:
+            print(f"{side} bowl already {state['status']}; skipping scheduled command {command['command']}")
+            command_queue.task_done()
+            continue
+
+        send_line(connection, command["command"])
+        state["status"] = "pending"
+        state["misses"] = 0
+        state["next_check_at"] = None
+        state["pending_since"] = time.monotonic()
+        state["close_sent_at"] = None
+        state["scheduled_context"] = {
+            "pet_name": command.get("pet_name"),
+            "meal_name": command.get("meal_name"),
+            "target_grams": command.get("target_grams"),
+            "starting_bowl_weight_grams": command.get("current_weight_grams"),
+            "grams_needed": command.get("grams_needed"),
+            "scheduled_for": command.get("scheduled_for"),
+            "schedule_id": command.get("schedule_id"),
+            "schedule_run_id": command.get("schedule_run_id"),
+        }
+        print(f"UART => {command['command']} ({command.get('meal_name')} for {command.get('pet_name')})")
+        command_queue.task_done()
 
 
 def sync_lid_state_from_telemetry(bowl_state, payload, args):
@@ -798,6 +1068,7 @@ def handle_trigger(
     side_state["next_check_at"] = None
     side_state["pending_since"] = time.monotonic()
     side_state["close_sent_at"] = None
+    side_state["scheduled_context"] = None
     print(f"UART => {command} ({pet_name})")
     queue_cloud_report(
         args,
@@ -946,6 +1217,19 @@ def main():
         ),
     )
     parser.add_argument(
+        "--claim-schedule-run-url",
+        default=None,
+        help=(
+            "Supabase schedule-run claim Edge Function URL. Defaults to "
+            "PAWS_CLAIM_SCHEDULE_RUN_URL or is derived from PAWS_INGEST_URL."
+        ),
+    )
+    parser.add_argument(
+        "--enable-scheduled-dispense",
+        action="store_true",
+        help="Allow due schedules to send FEED_LEFT/FEED_RIGHT UART commands after claim protection.",
+    )
+    parser.add_argument(
         "--no-schedule-dry-run",
         action="store_true",
         help="Disable schedule polling and dry-run schedule decision events.",
@@ -1001,10 +1285,16 @@ def main():
         or os.getenv("PAWS_SCHEDULE_URL")
         or derive_schedule_url(args.ingest_url)
     )
+    args.claim_schedule_run_url = (
+        args.claim_schedule_run_url
+        or os.getenv("PAWS_CLAIM_SCHEDULE_RUN_URL")
+        or derive_claim_schedule_run_url(args.ingest_url)
+    )
     if args.no_cloud:
         args.ingest_url = None
         args.device_token = None
         args.schedule_url = None
+        args.claim_schedule_run_url = None
 
     cloud_reporter = CloudReporter(args)
     args.cloud_reporter = cloud_reporter
@@ -1036,6 +1326,7 @@ def main():
                     "close_sent_at": None,
                     "latest_weight_grams": None,
                     "latest_weight_updated_at": None,
+                    "scheduled_context": None,
                 },
                 "RIGHT": {
                     "status": "closed",
@@ -1045,14 +1336,26 @@ def main():
                     "close_sent_at": None,
                     "latest_weight_grams": None,
                     "latest_weight_updated_at": None,
+                    "scheduled_context": None,
                 },
             }
             bowl_state_lock = threading.Lock()
-            schedule_worker = ScheduleDryRunWorker(args, bowl_state, bowl_state_lock)
+            scheduled_command_queue = queue.Queue(maxsize=10)
+            schedule_worker = ScheduleWorker(
+                args,
+                bowl_state,
+                bowl_state_lock,
+                scheduled_command_queue,
+            )
             schedule_worker.start()
             telemetry_report_cache = {}
 
             while True:
+                run_queued_scheduled_commands(
+                    connection=connection,
+                    bowl_state=bowl_state,
+                    command_queue=scheduled_command_queue,
+                )
                 reset_stale_pending_bowls(bowl_state, args)
                 run_due_presence_checks(
                     connection=connection,

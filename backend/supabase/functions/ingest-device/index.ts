@@ -170,6 +170,26 @@ Deno.serve(async (request) => {
     return jsonResponse({ error: eventError.message }, 500);
   }
 
+  if (payload.event_type === 'dispensed') {
+    const scheduleRunId = scheduledRunIdFromPayload(payload.raw_payload);
+
+    if (scheduleRunId) {
+      const { error: runUpdateError } = await supabase
+        .from('schedule_runs')
+        .update({
+          status: 'dispensed',
+          notes: payload.notes ?? null,
+          raw_payload: payload.raw_payload ?? payload,
+        })
+        .eq('id', scheduleRunId)
+        .eq('owner_id', device.owner_id);
+
+      if (runUpdateError) {
+        return jsonResponse({ error: runUpdateError.message }, 500);
+      }
+    }
+  }
+
   return jsonResponse({
     ok: true,
     device_id: device.id,
@@ -241,6 +261,17 @@ async function findPetId(
   }
 
   return data?.id ?? null;
+}
+
+function scheduledRunIdFromPayload(rawPayload?: Record<string, unknown>) {
+  const scheduledContext = rawPayload?.scheduled_context;
+
+  if (!scheduledContext || typeof scheduledContext !== 'object') {
+    return null;
+  }
+
+  const scheduleRunId = (scheduledContext as Record<string, unknown>).schedule_run_id;
+  return typeof scheduleRunId === 'string' ? scheduleRunId : null;
 }
 
 async function sha256Hex(value: string) {

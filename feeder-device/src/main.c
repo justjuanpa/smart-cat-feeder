@@ -46,6 +46,22 @@ static void process_pi_command(char *command)
     }
 
     printf("Recieved: %s\n", command);
+    int target_grams = 0;
+    if (sscanf(command, "FEED_RIGHT %d", &target_grams) == 1){
+        vTaskDelay(pdMS_TO_TICKS(50));
+        led_receive_command_r("RIGHT");
+        printf("Starting scheduled right dispense cycle to %d g\n", target_grams);
+        load_cell_start_right_target(target_grams);
+        return;
+    }
+
+    if (sscanf(command, "FEED_LEFT %d", &target_grams) == 1){
+        led_receive_command_l("LEFT");
+        printf("Starting scheduled left dispense cycle to %d g\n", target_grams);
+        load_cell_start_left_target(target_grams);
+        return;
+    }
+
     if (strcmp(command, "RIGHT") == 0 || strcmp(command, "ALLOW") == 0 || strcmp(command, "OPEN") == 0){ //if the raspberry pi says to open the right side
         vTaskDelay(pdMS_TO_TICKS(50));
                 led_receive_command_r(command);

@@ -69,11 +69,16 @@ provisioning:
 
    ```bash
    supabase functions deploy ingest-device
+   supabase functions deploy device-schedules
    ```
 
 The function has `verify_jwt = false` in `supabase/config.toml` because device
 authentication is handled with the per-device token in the
 `x-paws-device-token` header.
+
+If your database already existed before scheduled dry-run events were added,
+run `supabase/add-scheduled-dry-run-event-type.sql` once in the Supabase SQL
+Editor before testing the scheduler.
 
 ### Test From The Pi Or Laptop
 
@@ -98,17 +103,30 @@ python ai-model/device-ingestion/paws_ingest_client.py \
   --notes "Camera-only integration test"
 ```
 
+Schedule dry-run polling from `uart_pet_gate.py` uses the same device token as
+ingest. If `PAWS_INGEST_URL` ends in `/ingest-device`, the Pi automatically
+derives the schedule endpoint by replacing that suffix with `/device-schedules`.
+You can also set it explicitly:
+
+```bash
+export PAWS_SCHEDULE_URL="https://YOUR_PROJECT_REF.supabase.co/functions/v1/device-schedules"
+```
+
 ## Local Files
 
 - `supabase/schema.sql`: database tables, indexes, and Row Level Security.
 - `supabase/add-bowl-weight-columns.sql`: one-time helper for adding separate
   left/right bowl telemetry to an existing project.
+- `supabase/add-scheduled-dry-run-event-type.sql`: one-time helper for allowing
+  schedule dry-run decisions in an existing project.
 - `supabase/enable-pet-image-storage.sql`: one-time helper for allowing signed-in
   users to upload private pet profile pictures.
 - `supabase/enable-realtime.sql`: enables realtime app refreshes for
   `device_status` and `feeding_events`.
 - `supabase/config.toml`: Supabase function settings.
 - `supabase/functions/ingest-device/index.ts`: secure device ingestion endpoint.
+- `supabase/functions/device-schedules/index.ts`: secure endpoint for the Pi to
+  fetch the owner's enabled feeding schedules.
 - `supabase/provision-demo-device.sql`: helper SQL for creating a prototype
   feeder credential.
 - `.env.example`: environment variables needed by the mobile app and backend

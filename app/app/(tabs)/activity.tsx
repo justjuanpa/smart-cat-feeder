@@ -127,6 +127,10 @@ export default function ActivityScreen() {
 }
 
 function eventIcon(type: string): keyof typeof MaterialIcons.glyphMap {
+  if (type === 'scheduled_dry_run') {
+    return 'schedule';
+  }
+
   if (type === 'denied') {
     return 'block';
   }
@@ -145,6 +149,10 @@ function eventSummary(event: FeedingEventRow) {
 
   if (event.event_type === 'manual') {
     return 'Manual event from the mobile app.';
+  }
+
+  if (event.event_type === 'scheduled_dry_run') {
+    return 'Scheduled meal dry-run decision.';
   }
 
   return `${event.event_type} event${event.authorized === false ? ': access denied' : ''}.`;

@@ -1,5 +1,6 @@
 import argparse
 from collections import Counter
+import datetime as dt
 import os
 from pathlib import Path
 import queue
@@ -19,6 +20,7 @@ sys.path.append(str(DEVICE_INGESTION_DIR))
 sys.path.append(str(PET_RECOGNITION_DIR))
 
 from paws_ingest_client import post_ingest
+from paws_schedule_client import fetch_device_schedules
 from embedded_data import parse_embedded_message
 import live_burst_recognition as burst_recognition
 
@@ -141,6 +143,159 @@ class CloudReporter:
                 self.queue.task_done()
 
 
+class ScheduleDryRunWorker:
+    def __init__(self, args, bowl_state, bowl_state_lock):
+        self.args = args
+        self.bowl_state = bowl_state
+        self.bowl_state_lock = bowl_state_lock
+        self.enabled = bool(args.schedule_url and args.device_token and not args.no_schedule_dry_run)
+        self.thread = None
+        self.stop_requested = threading.Event()
+        self.handled_runs = set()
+
+    def start(self):
+        if not self.enabled:
+            print("Schedule dry-run worker disabled")
+            return
+
+        self.thread = threading.Thread(
+            target=self._run,
+            name="schedule-dry-run",
+            daemon=True,
+        )
+        self.thread.start()
+        print(f"Schedule dry-run worker started; polling every {self.args.schedule_check_interval}s")
+
+    def stop(self):
+        if not self.enabled or self.thread is None:
+            return
+
+        self.stop_requested.set()
+        self.thread.join(timeout=2.0)
+        if self.thread.is_alive():
+            print("Schedule dry-run worker still stopping; exiting without waiting")
+
+    def _run(self):
+        while not self.stop_requested.is_set():
+            self._check_schedules_once()
+            self.stop_requested.wait(self.args.schedule_check_interval)
+
+    def _check_schedules_once(self):
+        try:
+            status, response = fetch_device_schedules(
+                self.args.schedule_url,
+                self.args.device_serial,
+                self.args.device_token,
+            )
+        except Exception as error:
+            print(f"Schedule fetch failed: {error}")
+            return
+
+        if status < 200 or status >= 300:
+            print(f"Schedule fetch <= HTTP {status}: {response}")
+            return
+
+        schedules = response.get("schedules", [])
+        now = dt.datetime.now()
+        self._prune_old_runs(now)
+
+        for schedule in schedules:
+            due_at = due_datetime(schedule.get("scheduled_time"), now)
+            if due_at is None:
+                continue
+
+            elapsed = (now - due_at).total_seconds()
+            if elapsed < 0 or elapsed >= self.args.schedule_window_seconds:
+                continue
+
+            run_key = f"{schedule.get('id')}:{due_at.date().isoformat()}:{due_at.strftime('%H:%M')}"
+            if run_key in self.handled_runs:
+                continue
+
+            self.handled_runs.add(run_key)
+            self._handle_due_schedule(schedule, due_at)
+
+    def _handle_due_schedule(self, schedule, due_at):
+        pet = schedule_pet(schedule)
+        pet_name = (pet.get("name") or "").strip()
+        side = PET_COMMANDS.get(pet_name.lower())
+        target_grams = as_float(schedule.get("portion_grams"))
+        meal_name = schedule.get("meal_name") or "Scheduled meal"
+
+        if side is None:
+            notes = f"Scheduled meal dry run skipped: no bowl mapping for {pet_name or 'unknown pet'}"
+            decision = "skipped_no_bowl_mapping"
+            current_weight = None
+            grams_needed = None
+        else:
+            current_weight, weight_age = self._latest_weight(side)
+            if current_weight is None:
+                notes = f"Scheduled meal dry run skipped: no {side.lower()} bowl weight available"
+                decision = "skipped_missing_weight"
+                grams_needed = None
+            elif weight_age is None or weight_age > self.args.schedule_weight_max_age:
+                notes = (
+                    f"Scheduled meal dry run skipped: {side.lower()} bowl weight is stale "
+                    f"({weight_age:.1f}s old)"
+                )
+                decision = "skipped_stale_weight"
+                grams_needed = None
+            elif current_weight < target_grams:
+                grams_needed = round(target_grams - current_weight, 2)
+                notes = (
+                    f"Scheduled meal dry run: {meal_name} for {pet_name} would dispense "
+                    f"{grams_needed:g}g to reach {target_grams:g}g"
+                )
+                decision = "would_dispense"
+            else:
+                notes = (
+                    f"Scheduled meal dry run: {meal_name} for {pet_name} skipped; "
+                    f"{side.lower()} bowl already has {current_weight:g}g"
+                )
+                decision = "skipped_enough_food"
+                grams_needed = 0
+
+        print(notes)
+        queue_cloud_report(
+            self.args,
+            {
+                "event_type": "scheduled_dry_run",
+                "authorized": True,
+                "recognition_label": pet_name or None,
+                "amount_grams": grams_needed,
+                "notes": notes,
+                "raw_payload": {
+                    "schedule_id": schedule.get("id"),
+                    "pet_id": schedule.get("pet_id"),
+                    "pet_name": pet_name or None,
+                    "meal_name": meal_name,
+                    "scheduled_time": schedule.get("scheduled_time"),
+                    "scheduled_for": due_at.isoformat(),
+                    "target_grams": target_grams,
+                    "side": side,
+                    "current_weight_grams": current_weight,
+                    "decision": decision,
+                    "dry_run": True,
+                },
+            },
+        )
+
+    def _latest_weight(self, side):
+        with self.bowl_state_lock:
+            state = self.bowl_state[side]
+            weight = state.get("latest_weight_grams")
+            updated_at = state.get("latest_weight_updated_at")
+
+        if updated_at is None:
+            return weight, None
+
+        return weight, time.monotonic() - updated_at
+
+    def _prune_old_runs(self, now):
+        today_prefix = now.date().isoformat()
+        self.handled_runs = {run for run in self.handled_runs if f":{today_prefix}:" in run}
+
+
 def queue_cloud_report(args, payload, low_priority=False):
     reporter = getattr(args, "cloud_reporter", None)
     if reporter is None:
@@ -148,6 +303,48 @@ def queue_cloud_report(args, payload, low_priority=False):
         return
 
     reporter.submit(payload, low_priority=low_priority)
+
+
+def schedule_pet(schedule):
+    pet = schedule.get("pets") or {}
+    if isinstance(pet, list):
+        return pet[0] if pet else {}
+
+    return pet
+
+
+def as_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def due_datetime(scheduled_time, now):
+    if not scheduled_time:
+        return None
+
+    try:
+        hour, minute, second = scheduled_time.split(":")[:3]
+        return now.replace(
+            hour=int(hour),
+            minute=int(minute),
+            second=int(float(second)),
+            microsecond=0,
+        )
+    except (TypeError, ValueError):
+        print(f"Ignoring schedule with invalid time: {scheduled_time}")
+        return None
+
+
+def derive_schedule_url(ingest_url):
+    if not ingest_url:
+        return None
+
+    if ingest_url.endswith("/ingest-device"):
+        return f"{ingest_url[:-len('/ingest-device')]}/device-schedules"
+
+    return None
 
 
 def create_identity_pipeline(args):
@@ -357,12 +554,18 @@ def reset_stale_pending_bowls(bowl_state, args):
         state["close_sent_at"] = None
 
 
-def update_bowl_weight_state(bowl_state, payload):
-    if "left_bowl_weight_grams" in payload:
-        bowl_state["LEFT"]["latest_weight_grams"] = payload["left_bowl_weight_grams"]
+def update_bowl_weight_state(bowl_state, payload, bowl_state_lock=None):
+    lock = bowl_state_lock or threading.Lock()
+    with lock:
+        update_time = time.monotonic()
 
-    if "right_bowl_weight_grams" in payload:
-        bowl_state["RIGHT"]["latest_weight_grams"] = payload["right_bowl_weight_grams"]
+        if "left_bowl_weight_grams" in payload:
+            bowl_state["LEFT"]["latest_weight_grams"] = payload["left_bowl_weight_grams"]
+            bowl_state["LEFT"]["latest_weight_updated_at"] = update_time
+
+        if "right_bowl_weight_grams" in payload:
+            bowl_state["RIGHT"]["latest_weight_grams"] = payload["right_bowl_weight_grams"]
+            bowl_state["RIGHT"]["latest_weight_updated_at"] = update_time
 
 
 def mark_bowl_open(bowl_state, side, args):
@@ -735,6 +938,37 @@ def main():
         help="Plain device token. Defaults to PAWS_DEVICE_TOKEN.",
     )
     parser.add_argument(
+        "--schedule-url",
+        default=None,
+        help=(
+            "Supabase device schedule Edge Function URL. Defaults to PAWS_SCHEDULE_URL "
+            "or is derived from PAWS_INGEST_URL."
+        ),
+    )
+    parser.add_argument(
+        "--no-schedule-dry-run",
+        action="store_true",
+        help="Disable schedule polling and dry-run schedule decision events.",
+    )
+    parser.add_argument(
+        "--schedule-check-interval",
+        type=float,
+        default=30.0,
+        help="Seconds between schedule checks.",
+    )
+    parser.add_argument(
+        "--schedule-window-seconds",
+        type=float,
+        default=60.0,
+        help="Seconds after a scheduled meal time when the dry-run worker may handle it.",
+    )
+    parser.add_argument(
+        "--schedule-weight-max-age",
+        type=float,
+        default=120.0,
+        help="Maximum age in seconds for bowl telemetry used by schedule dry runs.",
+    )
+    parser.add_argument(
         "--no-cloud",
         action="store_true",
         help="Disable all cloud ingest calls for local UART/CV latency testing.",
@@ -762,14 +996,21 @@ def main():
     args.ingest_url = args.ingest_url or os.getenv("PAWS_INGEST_URL")
     args.device_serial = os.getenv("PAWS_DEVICE_SERIAL", args.device_serial)
     args.device_token = args.device_token or os.getenv("PAWS_DEVICE_TOKEN")
+    args.schedule_url = (
+        args.schedule_url
+        or os.getenv("PAWS_SCHEDULE_URL")
+        or derive_schedule_url(args.ingest_url)
+    )
     if args.no_cloud:
         args.ingest_url = None
         args.device_token = None
+        args.schedule_url = None
 
     cloud_reporter = CloudReporter(args)
     args.cloud_reporter = cloud_reporter
 
     camera, yolo_model, recognizer, profiles = create_identity_pipeline(args)
+    schedule_worker = None
 
     try:
         cloud_reporter.start()
@@ -794,6 +1035,7 @@ def main():
                     "pending_since": None,
                     "close_sent_at": None,
                     "latest_weight_grams": None,
+                    "latest_weight_updated_at": None,
                 },
                 "RIGHT": {
                     "status": "closed",
@@ -802,8 +1044,12 @@ def main():
                     "pending_since": None,
                     "close_sent_at": None,
                     "latest_weight_grams": None,
+                    "latest_weight_updated_at": None,
                 },
             }
+            bowl_state_lock = threading.Lock()
+            schedule_worker = ScheduleDryRunWorker(args, bowl_state, bowl_state_lock)
+            schedule_worker.start()
             telemetry_report_cache = {}
 
             while True:
@@ -840,7 +1086,11 @@ def main():
                 embedded_message = parse_embedded_message(message)
                 if embedded_message is not None:
                     print(f"Telemetry <= {embedded_message['payload']}")
-                    update_bowl_weight_state(bowl_state, embedded_message["payload"])
+                    update_bowl_weight_state(
+                        bowl_state,
+                        embedded_message["payload"],
+                        bowl_state_lock,
+                    )
                     sync_lid_state_from_telemetry(
                         bowl_state,
                         embedded_message["payload"],
@@ -872,6 +1122,8 @@ def main():
                     profiles=profiles,
                 )
     finally:
+        if schedule_worker is not None:
+            schedule_worker.stop()
         camera.stop()
         camera.close()
         cloud_reporter.stop()

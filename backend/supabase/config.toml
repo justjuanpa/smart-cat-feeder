@@ -1,2 +1,5 @@
 [functions.ingest-device]
 verify_jwt = false
+
+[functions.device-schedules]
+verify_jwt = false

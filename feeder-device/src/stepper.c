@@ -85,6 +85,24 @@ void stepperEnableRight(bool val){
     enable_right = val; 
 }
 
+void stepperStopLeftNoClean(void){
+    enable_left = false;
+    clean_once_left = true;
+    gpio_set_level(LEFTSTEP_1_PIN, 0);
+    gpio_set_level(LEFTSTEP_2_PIN, 0);
+    gpio_set_level(LEFTSTEP_3_PIN, 0);
+    gpio_set_level(LEFTSTEP_4_PIN, 0);
+}
+
+void stepperStopRightNoClean(void){
+    enable_right = false;
+    clean_once_right = true;
+    gpio_set_level(RIGHTSTEP_1_PIN, 0);
+    gpio_set_level(RIGHTSTEP_2_PIN, 0);
+    gpio_set_level(RIGHTSTEP_3_PIN, 0);
+    gpio_set_level(RIGHTSTEP_4_PIN, 0);
+}
+
 void stepper_spin_task (void *parameters){
     //printf("here\n");
     //while (1){

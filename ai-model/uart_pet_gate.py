@@ -914,6 +914,12 @@ def mark_scheduled_dispense_complete(bowl_state, side, args, final_weight_grams=
         if meal_name
         else f"Scheduled meal dispensed into {side} bowl"
     )
+    latest_weight_grams = state.get("latest_weight_grams")
+    status_weights = {
+        "current_weight_grams": latest_weight_grams,
+        "left_bowl_weight_grams": latest_weight_grams if side == "LEFT" else None,
+        "right_bowl_weight_grams": latest_weight_grams if side == "RIGHT" else None,
+    }
 
     state["status"] = "closed"
     state["misses"] = 0
@@ -930,10 +936,11 @@ def mark_scheduled_dispense_complete(bowl_state, side, args, final_weight_grams=
             "recognition_label": pet_name,
             "amount_grams": amount_grams,
             "notes": notes,
+            **status_weights,
             "raw_payload": {
                 "side": side,
                 "message": f"DISPENSED_{side}",
-                "latest_weight_grams": state.get("latest_weight_grams"),
+                "latest_weight_grams": latest_weight_grams,
                 "final_weight_grams": final_weight_grams,
                 "scheduled_context": scheduled_context,
                 "access_lid_opened": False,

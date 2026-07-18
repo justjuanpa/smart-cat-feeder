@@ -33,6 +33,8 @@ void stepper_spin_stop(bool val);
 void stepper_task(void *para);
 void stepperEnableLeft(bool val);
 void stepperEnableRight(bool val);
+void stepperStopLeftNoClean(void);
+void stepperStopRightNoClean(void);
 esp_err_t rightStepTake(TickType_t wait_time); //for the bttn interrupt and sttepper task
 void rightStepGive(void);
 

@@ -72,9 +72,13 @@ static int dispense_stop_threshold(int target_grams)
     return threshold < 0 ? 0 : threshold;
 }
 
-static bool should_pulse_dispense(int grams, int target_grams)
+static bool should_pulse_dispense(int grams, int target_grams, bool open_lid_on_complete)
 {
-    return (target_grams - grams) <= DISPENSE_PULSE_ZONE_GRAMS;
+    if (open_lid_on_complete) {
+        return false;
+    }
+
+    return target_grams <= 15 || (target_grams - grams) <= DISPENSE_PULSE_ZONE_GRAMS;
 }
 
 esp_err_t hx711_init(hx711_t *dev)
@@ -220,7 +224,7 @@ void load_cell_start_left_target(int target_grams, bool open_lid_on_complete){
     left_open_lid_on_complete = open_lid_on_complete;
     left_target_readings = 0;
     left_dispense_enabled = true;
-    stepperEnableLeft(false);
+    stepperStopLeftNoClean();
 }
 
 void load_cell_start_right_target(int target_grams, bool open_lid_on_complete){
@@ -232,7 +236,7 @@ void load_cell_start_right_target(int target_grams, bool open_lid_on_complete){
     right_open_lid_on_complete = open_lid_on_complete;
     right_target_readings = 0;
     right_dispense_enabled = true;
-    stepperEnableRight(false);
+    stepperStopRightNoClean();
 }
 
 void load_cell_stop_all(void){
@@ -248,7 +252,7 @@ static void update_left_dispense(bool ready, int grams)
 
     if (!ready) {
         printf("Left HX711 not ready; waiting before continuing left dispense\n");
-        stepperEnableLeft(false);
+        stepperStopLeftNoClean();
         return;
     }
 
@@ -259,7 +263,7 @@ static void update_left_dispense(bool ready, int grams)
         left_target_readings = 0;
         servoEnableLeft(false);
 
-        if (should_pulse_dispense(grams, target_grams)) {
+        if (should_pulse_dispense(grams, target_grams, left_open_lid_on_complete)) {
             printf(
                 "Left bowl pulse dispensing: %d/%d g (stop threshold %d g)\n",
                 grams,
@@ -268,7 +272,7 @@ static void update_left_dispense(bool ready, int grams)
             );
             stepperEnableLeft(true);
             vTaskDelay(pdMS_TO_TICKS(DISPENSE_PULSE_MS));
-            stepperEnableLeft(false);
+            stepperStopLeftNoClean();
             vTaskDelay(pdMS_TO_TICKS(DISPENSE_PULSE_SETTLE_MS));
             return;
         }
@@ -283,7 +287,7 @@ static void update_left_dispense(bool ready, int grams)
         return;
     }
 
-    stepperEnableLeft(false);
+    stepperStopLeftNoClean();
     left_target_readings++;
     if (left_target_readings < TARGET_CONFIRMATION_READINGS) {
         printf(
@@ -318,7 +322,7 @@ static void update_right_dispense(bool ready, int grams)
 
     if (!ready) {
         printf("Right HX711 not ready; waiting before continuing right dispense\n");
-        stepperEnableRight(false);
+        stepperStopRightNoClean();
         return;
     }
 
@@ -329,7 +333,7 @@ static void update_right_dispense(bool ready, int grams)
         right_target_readings = 0;
         servoEnableRight(false);
 
-        if (should_pulse_dispense(grams, target_grams)) {
+        if (should_pulse_dispense(grams, target_grams, right_open_lid_on_complete)) {
             printf(
                 "Right bowl pulse dispensing: %d/%d g (stop threshold %d g)\n",
                 grams,
@@ -338,7 +342,7 @@ static void update_right_dispense(bool ready, int grams)
             );
             stepperEnableRight(true);
             vTaskDelay(pdMS_TO_TICKS(DISPENSE_PULSE_MS));
-            stepperEnableRight(false);
+            stepperStopRightNoClean();
             vTaskDelay(pdMS_TO_TICKS(DISPENSE_PULSE_SETTLE_MS));
             return;
         }
@@ -353,7 +357,7 @@ static void update_right_dispense(bool ready, int grams)
         return;
     }
 
-    stepperEnableRight(false);
+    stepperStopRightNoClean();
     right_target_readings++;
     if (right_target_readings < TARGET_CONFIRMATION_READINGS) {
         printf(

@@ -1,7 +1,7 @@
 import { Image } from "expo-image";
 import { MaterialIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Pressable,
@@ -27,6 +27,7 @@ import {
 import { formatGrams, formatScheduleTime } from "@/utils/formatters";
 
 const petColors = ["#1D4FA3", "#5F7FBD", "#6B8FD6", "#8CA8E8"];
+type ScheduleSort = "time" | "newest";
 
 export default function PetsScreen() {
   const { session } = useSupabaseSession();
@@ -37,6 +38,17 @@ export default function PetsScreen() {
   const [loading, setLoading] = useState(true);
   const [savingDemo, setSavingDemo] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scheduleSort, setScheduleSort] = useState<ScheduleSort>("time");
+
+  const sortedSchedules = useMemo(() => {
+    return [...schedules].sort((first, second) => {
+      if (scheduleSort === "newest") {
+        return new Date(second.created_at).getTime() - new Date(first.created_at).getTime();
+      }
+
+      return first.scheduled_time.localeCompare(second.scheduled_time);
+    });
+  }, [scheduleSort, schedules]);
 
   const loadPetData = useCallback(async () => {
     setLoading(true);
@@ -206,12 +218,28 @@ export default function PetsScreen() {
               <MaterialIcons name="add" size={22} color="#FFFFFF" />
             </Pressable>
           </View>
-          {schedules.length === 0 ? (
+
+          {schedules.length > 1 ? (
+            <View style={styles.sortControls}>
+              <SortButton
+                active={scheduleSort === "time"}
+                label="Meal time"
+                onPress={() => setScheduleSort("time")}
+              />
+              <SortButton
+                active={scheduleSort === "newest"}
+                label="Newest"
+                onPress={() => setScheduleSort("newest")}
+              />
+            </View>
+          ) : null}
+
+          {sortedSchedules.length === 0 ? (
             <Text style={styles.muted}>
               No schedules yet. Press + to add the first meal.
             </Text>
           ) : (
-            schedules.map((meal) => (
+            sortedSchedules.map((meal) => (
               <Pressable
                 key={meal.id}
                 onPress={() =>
@@ -259,6 +287,27 @@ export default function PetsScreen() {
         </View>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function SortButton({
+  active,
+  label,
+  onPress,
+}: {
+  active: boolean;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[styles.sortButton, active && styles.sortButtonActive]}
+    >
+      <Text style={[styles.sortButtonText, active && styles.sortButtonTextActive]}>
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -453,6 +502,31 @@ const styles = StyleSheet.create({
   scheduleMeta: {
     alignItems: "flex-end",
     gap: 6,
+  },
+  sortControls: {
+    backgroundColor: "#EEF4FF",
+    borderRadius: 8,
+    flexDirection: "row",
+    gap: 6,
+    padding: 4,
+  },
+  sortButton: {
+    alignItems: "center",
+    borderRadius: 8,
+    flex: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  sortButtonActive: {
+    backgroundColor: "#FFFFFF",
+  },
+  sortButtonText: {
+    color: "#5F6F8C",
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  sortButtonTextActive: {
+    color: "#1D4FA3",
   },
   scheduleRow: {
     alignItems: "center",

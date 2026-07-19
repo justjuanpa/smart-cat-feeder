@@ -31,6 +31,7 @@ export type FeedingScheduleRow = {
   scheduled_time: string;
   portion_grams: number;
   enabled: boolean;
+  created_at: string;
   pets?: Pick<PetRow, 'name'> | null;
 };
 
@@ -245,7 +246,7 @@ export async function uploadPetProfileImage({
 export async function fetchSchedules() {
   const { data, error } = await supabase
     .from('feeding_schedules')
-    .select('id, pet_id, meal_name, scheduled_time, portion_grams, enabled, pets(name)')
+    .select('id, pet_id, meal_name, scheduled_time, portion_grams, enabled, created_at, pets(name)')
     .order('scheduled_time', { ascending: true });
 
   if (error) {
@@ -261,7 +262,7 @@ export async function fetchSchedules() {
 export async function fetchSchedule(scheduleId: string) {
   const { data, error } = await supabase
     .from('feeding_schedules')
-    .select('id, pet_id, meal_name, scheduled_time, portion_grams, enabled, pets(name)')
+    .select('id, pet_id, meal_name, scheduled_time, portion_grams, enabled, created_at, pets(name)')
     .eq('id', scheduleId)
     .single();
 

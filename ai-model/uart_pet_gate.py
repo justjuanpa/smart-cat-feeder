@@ -46,6 +46,10 @@ DISPENSED_MESSAGES = {
     "DISPENSED_LEFT": "LEFT",
     "DISPENSED_RIGHT": "RIGHT",
 }
+DISPENSE_FAILED_MESSAGES = {
+    "DISPENSE_FAILED_LEFT": "LEFT",
+    "DISPENSE_FAILED_RIGHT": "RIGHT",
+}
 CLOSED_MESSAGES = {
     "CLOSED_LEFT": "LEFT",
     "CLOSED_RIGHT": "RIGHT",
@@ -631,6 +635,23 @@ def parse_dispensed_message(message):
     return side, final_weight_grams
 
 
+def parse_dispense_failed_message(message):
+    parts = message.split()
+    if not parts:
+        return None
+
+    side = DISPENSE_FAILED_MESSAGES.get(parts[0])
+    if side is None:
+        return None
+
+    reason = parts[1] if len(parts) >= 2 else "UNKNOWN"
+    final_weight_grams = None
+    if len(parts) >= 3:
+        final_weight_grams = as_float(parts[2])
+
+    return side, reason, final_weight_grams
+
+
 def due_datetime(scheduled_time, now):
     if not scheduled_time:
         return None
@@ -1023,6 +1044,118 @@ def mark_scheduled_dispense_complete(bowl_state, side, args, final_weight_grams=
         },
     )
     state["scheduled_context"] = None
+
+
+def mark_scheduled_dispense_failed(bowl_state, side, args, reason, final_weight_grams=None):
+    state = bowl_state[side]
+    if final_weight_grams is not None:
+        state["latest_weight_grams"] = final_weight_grams
+        state["latest_weight_updated_at"] = time.monotonic()
+
+    scheduled_context = state.get("scheduled_context")
+    meal_name = (
+        scheduled_context.get("meal_name")
+        if scheduled_context is not None
+        else "Scheduled meal"
+    )
+    pet_name = (
+        scheduled_context.get("pet_name")
+        if scheduled_context is not None
+        else SIDE_PETS[side]
+    )
+    latest_weight_grams = state.get("latest_weight_grams")
+    readable_reason = reason.replace("_", " ").lower()
+    notes = (
+        f"Scheduled meal {meal_name} failed on {side} bowl: {readable_reason}. "
+        "Check for an empty hopper or jam."
+    )
+
+    state["status"] = "open" if scheduled_context and scheduled_context.get("access_lid_was_open") else "closed"
+    state["misses"] = 0
+    state["next_check_at"] = (
+        time.monotonic() + args.presence_check_interval
+        if state["status"] == "open"
+        else None
+    )
+    state["pending_since"] = None
+    state["close_sent_at"] = None
+
+    print(f"{side} scheduled dispense failed: {reason} at {latest_weight_grams}g")
+    report_schedule_run_failed(
+        args=args,
+        side=side,
+        pet_name=pet_name,
+        notes=notes,
+        reason=reason,
+        latest_weight_grams=latest_weight_grams,
+        scheduled_context=scheduled_context,
+    )
+    queue_cloud_report(
+        args,
+        {
+            "current_weight_grams": latest_weight_grams,
+            "left_bowl_weight_grams": latest_weight_grams if side == "LEFT" else None,
+            "right_bowl_weight_grams": latest_weight_grams if side == "RIGHT" else None,
+            "notes": notes,
+            "raw_payload": {
+                "side": side,
+                "message": f"DISPENSE_FAILED_{side}",
+                "reason": reason,
+                "latest_weight_grams": latest_weight_grams,
+                "final_weight_grams": final_weight_grams,
+                "scheduled_context": scheduled_context,
+            },
+        },
+    )
+    state["scheduled_context"] = None
+
+
+def report_schedule_run_failed(args, side, pet_name, notes, reason, latest_weight_grams, scheduled_context):
+    if scheduled_context is None:
+        print("Scheduled dispense failed without schedule context; cannot mark schedule run failed")
+        return
+
+    schedule_id = scheduled_context.get("schedule_id")
+    scheduled_for = scheduled_context.get("scheduled_for")
+    target_grams = scheduled_context.get("target_grams")
+
+    if not args.claim_schedule_run_url or not schedule_id or not scheduled_for or target_grams is None:
+        print("Scheduled dispense failed, but schedule-run reporting is not configured")
+        return
+
+    try:
+        status, response = claim_schedule_run(
+            args.claim_schedule_run_url,
+            args.device_serial,
+            args.device_token,
+            {
+                "schedule_id": schedule_id,
+                "scheduled_for": scheduled_for,
+                "status": "failed",
+                "target_grams": target_grams,
+                "starting_bowl_weight_grams": scheduled_context.get("starting_bowl_weight_grams"),
+                "grams_needed": scheduled_context.get("grams_needed"),
+                "side": side,
+                "notes": notes,
+                "raw_payload": {
+                    "decision": "dispense_failed",
+                    "reason": reason,
+                    "pet_name": pet_name,
+                    "meal_name": scheduled_context.get("meal_name"),
+                    "latest_weight_grams": latest_weight_grams,
+                    "scheduled_context": scheduled_context,
+                },
+            },
+        )
+    except Exception as error:
+        print(f"Schedule failed-run update failed: {error}")
+        return
+
+    if status < 200 or status >= 300:
+        print(f"Schedule failed-run update <= HTTP {status}: {response}")
+        return
+
+    print(f"Schedule failed-run update <= HTTP {status}: {response}")
 
 
 def run_queued_scheduled_commands(connection, bowl_state, command_queue):
@@ -1580,6 +1713,18 @@ def main():
                         bowl_state,
                         side,
                         args,
+                        final_weight_grams,
+                    )
+                    continue
+
+                failed_dispense_message = parse_dispense_failed_message(message)
+                if failed_dispense_message is not None:
+                    side, reason, final_weight_grams = failed_dispense_message
+                    mark_scheduled_dispense_failed(
+                        bowl_state,
+                        side,
+                        args,
+                        reason,
                         final_weight_grams,
                     )
                     continue

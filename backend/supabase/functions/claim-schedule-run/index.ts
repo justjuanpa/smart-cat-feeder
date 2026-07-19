@@ -133,6 +133,33 @@ Deno.serve(async (request) => {
     return jsonResponse({ error: existingError.message }, 500);
   }
 
+  if (existingRun && payload.status === 'failed') {
+    const { data: updatedRun, error: updateError } = await supabase
+      .from('schedule_runs')
+      .update({
+        status: 'failed',
+        notes: payload.notes ?? null,
+        raw_payload: payload.raw_payload ?? {},
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', existingRun.id)
+      .neq('status', 'dispensed')
+      .select('id, status, scheduled_for')
+      .maybeSingle();
+
+    if (updateError) {
+      return jsonResponse({ error: updateError.message }, 500);
+    }
+
+    return jsonResponse({
+      ok: true,
+      claimed: false,
+      updated: Boolean(updatedRun),
+      reason: updatedRun ? 'updated_existing_run' : 'existing_run_not_updated',
+      schedule_run: updatedRun ?? existingRun,
+    });
+  }
+
   return jsonResponse({
     ok: true,
     claimed: false,

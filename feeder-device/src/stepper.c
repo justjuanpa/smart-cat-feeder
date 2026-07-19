@@ -5,6 +5,8 @@
 #include "stepper.h"
 #include "esp_err.h"
 #include "freertos/semphr.h"
+#include "lux_to_led.h"
+#include "uart_comm.h"
 
 
 #define RIGHTSTEP_1_PIN GPIO_NUM_9
@@ -192,7 +194,9 @@ void manual_right_stepper_task(void *para){
                 // printf("prev: %lu & curr: %lu \n", previousTime, currentTime);
                 if ((currentTime-previousTime) > 25){ //if the pir sensor interrupt went of time do uart stuff
                     while(gpio_get_level(RSTEP_PIN) == 0){
+
                         printf("button is pressed mane forward direction\n");
+                        led_spinRcommand("F");
                         gpio_set_level(RIGHTSTEP_1_PIN, 1);
                         gpio_set_level(RIGHTSTEP_2_PIN, 0);
                         gpio_set_level(RIGHTSTEP_3_PIN, 0);
@@ -226,6 +230,7 @@ void manual_right_stepper_task(void *para){
                 }
                 else if ((currentTime - previousTime) < 25){
                     while(gpio_get_level(RSTEP_PIN) == 0){
+                        led_spinRcommand("R");
                         printf("button is pressed mane reverse direction\n");
                         gpio_set_level(RIGHTSTEP_1_PIN, 0);
                         gpio_set_level(RIGHTSTEP_2_PIN, 0);
@@ -258,6 +263,7 @@ void manual_right_stepper_task(void *para){
                     gpio_set_level(RIGHTSTEP_4_PIN, 0);
                 }
                 manual_overide_r = false;
+                                        led_spinRcommand("S") //s for stop;
         } else {
             printf("semaphore fail");
         }
@@ -499,6 +505,8 @@ void stepper_task(void *parameter){
        }
 
     if (!manual_overide_r){
+        led_spinRcommand("S") //s for stop;
+
         if (enable_right) {
             gpio_set_level(RIGHTSTEP_1_PIN, 1);
             gpio_set_level(RIGHTSTEP_2_PIN, 0);

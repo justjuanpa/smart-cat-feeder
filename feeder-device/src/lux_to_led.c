@@ -74,6 +74,8 @@ char pi_command_l[256];
 char pi_command_deny[256];
 bool left_manual_mode = false;
 bool right_manual_mode = false; 
+char right_spin_mode[256];
+char left_spin_mode[256]; 
 static TickType_t last_command_r_time = 0;
 static TickType_t last_command_l_time = 0;
 static TickType_t last_command_deny_time = 0;
@@ -207,6 +209,14 @@ void led_receieve_manual_left (bool led){
     left_manual_mode = led;
 }
 
+void led_spinLcommand(char *command){
+    strcpy(left_spin_mode, command);
+}
+
+void led_spinRcommand(char *command){
+    strcpy(right_spin_mode, command);
+}
+
 void detection_led_task(void *para)
 {
     ESP_ERROR_CHECK_WITHOUT_ABORT(
@@ -228,7 +238,7 @@ void detection_led_task(void *para)
          * RIGHT command:
          * Blink the right-side detection LEDs green.
          */
-        if (!right_manual_mode){
+        if (!right_manual_mode || (((strcmp(right_spin_mode, "S")) == 0))){
                 if (strcmp(pi_command_r, "RIGHT") == 0) {
                 if ((currTime - last_command_r_time) < pdMS_TO_TICKS(5000)){
                     command_active_r = true;
@@ -416,7 +426,7 @@ void detection_led_task(void *para)
          * Idle mode:
          * This runs only when none of the commands above matched.
          */
-        if (!command_active_r) {
+        if (!command_active_r || ((strcmp(right_spin_mode, "S")) == 0)) {
              if (!right_manual_mode){
                     if (lux >= 120){
                     for (int i = 0; i < LED_NUM_W_STR; i++) {
@@ -474,6 +484,28 @@ void detection_led_task(void *para)
                 ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
             }
              } else { //in manual mode
+                if (strcmp(right_spin_mode, "F") == 0){
+                    for (int i = 0; i < LED_NUM_W_STR; i++) {
+                        ws2812_buffer[i] = (CRGB){
+                            .r = 100,
+                            .g = 35,
+                            .b = 0
+                        };
+                        vTaskDelay(pdMS_TO_TICKS(10));
+                    }
+
+                } else if (strcmp(right_spin_mode, "R")){
+                    for (int i = LED_NUM_W_STR; i > 0; i--) {
+                        ws2812_buffer[i] = (CRGB){
+                            .r = 100,
+                            .g = 35,
+                            .b = 0
+                        };
+                        vTaskDelay(pdMS_TO_TICKS(10));
+                    }
+                }
+
+                //idle 
                 for (int i = 0; i < LED_NUM_W_STR; i++) {
                     ws2812_buffer[i] = (CRGB){
                         .r = 100,

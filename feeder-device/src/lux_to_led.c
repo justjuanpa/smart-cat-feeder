@@ -581,7 +581,9 @@ void detection_led_task(void *para)
 
                 ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
             }
-           } else {
+           } 
+           
+        else {
         // Manual-mode direction animation
 
         if (strcmp(left_spin_mode, "F") == 0) {
@@ -596,31 +598,32 @@ void detection_led_task(void *para)
                 vTaskDelay(pdMS_TO_TICKS(100));
             }
         }
-        else if (strcmp(left_spin_mode, "R") == 0) {
-            for (int i = LED_NUM - 1; i >= LED_NUM_W_END; i--) {
-                ws2812_buffer[i] = (CRGB){
-                    .r = 100,
-                    .g = 75,
-                    .b = 20
-                };
+            else if (strcmp(left_spin_mode, "R") == 0) {
+                for (int i = LED_NUM - 1; i >= LED_NUM_W_END; i--) {
+                    ws2812_buffer[i] = (CRGB){
+                        .r = 100,
+                        .g = 75,
+                        .b = 20
+                    };
+
+                    ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+                    vTaskDelay(pdMS_TO_TICKS(100));
+                }
+            }
+            else {
+                // Manual mode, but stopped
+                for (int i = LED_NUM_W_END; i < LED_NUM; i++) {
+                    ws2812_buffer[i] = (CRGB){
+                        .r = 100,
+                        .g = 35,
+                        .b = 0
+                    };
+                }
 
                 ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
-                vTaskDelay(pdMS_TO_TICKS(100));
             }
         }
-        else {
-            // Manual mode, but stopped
-            for (int i = LED_NUM_W_END; i < LED_NUM; i++) {
-                ws2812_buffer[i] = (CRGB){
-                    .r = 100,
-                    .g = 35,
-                    .b = 0
-                };
-            }
-
-            ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
-        }
-        }
+    }
 
         // Prevent the task from running continuously with no pause.
         vTaskDelay(pdMS_TO_TICKS(100));

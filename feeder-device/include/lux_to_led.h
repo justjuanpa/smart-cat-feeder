@@ -13,6 +13,8 @@ void led_receive_command_r(char *command);
 void led_receive_command_deny(char *command);
 void led_receieve_manual_right (bool led);
 void led_receieve_manual_left (bool led);
+void led_spinLcommand(char *command);
+void led_spinRcommand(char *command);
 
 int ledStats(void);
 

@@ -491,8 +491,10 @@ void detection_led_task(void *para)
                             .g = 35,
                             .b = 0
                         };
-                        vTaskDelay(pdMS_TO_TICKS(10));
+                        vTaskDelay(pdMS_TO_TICKS(100));
                     }
+                                    ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+
 
                 } else if (strcmp(right_spin_mode, "R")){
                     for (int i = LED_NUM_W_STR; i > 0; i--) {
@@ -501,8 +503,10 @@ void detection_led_task(void *para)
                             .g = 35,
                             .b = 0
                         };
-                        vTaskDelay(pdMS_TO_TICKS(10));
+                        vTaskDelay(pdMS_TO_TICKS(100));
                     }
+                    ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+
                 }
 
                 //idle 

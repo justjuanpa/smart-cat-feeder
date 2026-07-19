@@ -10,7 +10,8 @@ void match_val_receive(int para);
 void PirLedDoor(bool val); 
 void led_receive_command_l(char *command);
 void led_receive_command_r(char *command);
+void led_receive_command_deny(char *command);
 
 int ledStats(void);
 
-#endif // LEDSTRIPNEW_H
+#endif // LEDSTRIPNEW_H0

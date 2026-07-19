@@ -505,7 +505,7 @@ void stepper_task(void *parameter){
        }
 
     if (!manual_overide_r){
-        led_spinRcommand("S"); //s for stop;
+        //led_spinRcommand("S"); //s for stop;
 
         if (enable_right) {
             gpio_set_level(RIGHTSTEP_1_PIN, 1);

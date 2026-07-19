@@ -77,6 +77,25 @@ def report_to_cloud(args, payload):
         print(f"Cloud ingest failed: {error}")
 
 
+def merge_cloud_payloads(existing_payload, next_payload):
+    if next_payload is None:
+        return dict(existing_payload)
+
+    merged = {
+        **existing_payload,
+        **next_payload,
+    }
+    existing_raw = existing_payload.get("raw_payload")
+    next_raw = next_payload.get("raw_payload")
+    if isinstance(existing_raw, dict) and isinstance(next_raw, dict):
+        merged["raw_payload"] = {
+            **existing_raw,
+            **next_raw,
+        }
+
+    return merged
+
+
 class CloudReporter:
     def __init__(self, args):
         self.args = args
@@ -107,7 +126,7 @@ class CloudReporter:
 
         with self.queue_lock:
             if low_priority:
-                self._coalesce_queued_telemetry()
+                payload = self._coalesce_queued_telemetry(payload)
             try:
                 self.queue.put_nowait((payload, low_priority))
                 return
@@ -137,9 +156,10 @@ class CloudReporter:
             f"dropped important event payload #{self.dropped_events}: {payload}"
         )
 
-    def _coalesce_queued_telemetry(self):
+    def _coalesce_queued_telemetry(self, next_payload=None):
         kept = []
         dropped = 0
+        merged_payload = dict(next_payload) if next_payload else None
 
         while True:
             try:
@@ -147,8 +167,9 @@ class CloudReporter:
             except queue.Empty:
                 break
 
-            _payload, low_priority = item
+            payload, low_priority = item
             if low_priority:
+                merged_payload = merge_cloud_payloads(payload, merged_payload)
                 dropped += 1
             else:
                 kept.append(item)
@@ -168,6 +189,8 @@ class CloudReporter:
                     f"{dropped} stale telemetry payload(s); "
                     f"total dropped {self.dropped_telemetry}"
                 )
+
+        return merged_payload
 
     def stop(self):
         if not self.enabled or self.thread is None:

@@ -263,7 +263,7 @@ void manual_right_stepper_task(void *para){
                     gpio_set_level(RIGHTSTEP_4_PIN, 0);
                 }
                 manual_overide_r = false;
-                                        led_spinRcommand("S") //s for stop;
+                                        led_spinRcommand("S"); //s for stop;
         } else {
             printf("semaphore fail");
         }
@@ -505,7 +505,7 @@ void stepper_task(void *parameter){
        }
 
     if (!manual_overide_r){
-        led_spinRcommand("S") //s for stop;
+        led_spinRcommand("S"); //s for stop;
 
         if (enable_right) {
             gpio_set_level(RIGHTSTEP_1_PIN, 1);

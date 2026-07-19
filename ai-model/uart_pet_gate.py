@@ -1016,8 +1016,10 @@ def sync_lid_state_from_telemetry(bowl_state, payload, args):
                     )
                     continue
 
-                print(f"{side} lid telemetry still says open after close command; waiting for close confirmation")
-                continue
+                print(
+                    f"{side} lid telemetry still says open after close command; "
+                    "treating lid as open"
+                )
 
             if state["status"] != "open":
                 print(f"{side} lid telemetry says open; marking bowl open")

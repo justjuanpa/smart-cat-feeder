@@ -242,7 +242,7 @@ class ScheduleWorker:
         else:
             current_weight, weight_age = self._latest_weight(side)
             bowl_status = self._bowl_status(side)
-            if bowl_status in {"pending", "open", "closing"}:
+            if bowl_status in {"pending", "closing"}:
                 notes = (
                     f"Scheduled meal dry run skipped: {side.lower()} bowl is already "
                     f"{bowl_status}"
@@ -898,6 +898,11 @@ def mark_scheduled_dispense_complete(bowl_state, side, args, final_weight_grams=
         if scheduled_context is not None
         else None
     )
+    lid_was_open = (
+        scheduled_context.get("access_lid_was_open")
+        if scheduled_context is not None
+        else False
+    )
     notes = (
         f"Scheduled meal {meal_name} dispensed into {side} bowl"
         if meal_name
@@ -910,13 +915,18 @@ def mark_scheduled_dispense_complete(bowl_state, side, args, final_weight_grams=
         "right_bowl_weight_grams": latest_weight_grams if side == "RIGHT" else None,
     }
 
-    state["status"] = "closed"
+    state["status"] = "open" if lid_was_open else "closed"
     state["misses"] = 0
-    state["next_check_at"] = None
+    state["next_check_at"] = (
+        time.monotonic() + args.presence_check_interval
+        if lid_was_open
+        else None
+    )
     state["pending_since"] = None
     state["close_sent_at"] = None
 
-    print(f"{side} scheduled dispense complete; lid remains closed")
+    lid_note = "lid was already open" if lid_was_open else "lid remains closed"
+    print(f"{side} scheduled dispense complete; {lid_note}")
     queue_cloud_report(
         args,
         {
@@ -933,6 +943,7 @@ def mark_scheduled_dispense_complete(bowl_state, side, args, final_weight_grams=
                 "final_weight_grams": final_weight_grams,
                 "scheduled_context": scheduled_context,
                 "access_lid_opened": False,
+                "access_lid_open_during_dispense": lid_was_open,
             },
         },
     )
@@ -948,7 +959,8 @@ def run_queued_scheduled_commands(connection, bowl_state, command_queue):
 
         side = command["side"]
         state = bowl_state[side]
-        if state["status"] in {"pending", "open", "closing"}:
+        lid_was_open = state["status"] == "open"
+        if state["status"] in {"pending", "closing"}:
             print(f"{side} bowl already {state['status']}; skipping scheduled command {command['command']}")
             command_queue.task_done()
             continue
@@ -968,6 +980,7 @@ def run_queued_scheduled_commands(connection, bowl_state, command_queue):
             "scheduled_for": command.get("scheduled_for"),
             "schedule_id": command.get("schedule_id"),
             "schedule_run_id": command.get("schedule_run_id"),
+            "access_lid_was_open": lid_was_open,
         }
         print(f"UART => {command['command']} ({command.get('meal_name')} for {command.get('pet_name')})")
         command_queue.task_done()
@@ -1003,8 +1016,10 @@ def sync_lid_state_from_telemetry(bowl_state, payload, args):
                     )
                     continue
 
-                print(f"{side} lid telemetry still says open after close command; waiting for close confirmation")
-                continue
+                print(
+                    f"{side} lid telemetry still says open after close command; "
+                    "treating lid as open"
+                )
 
             if state["status"] != "open":
                 print(f"{side} lid telemetry says open; marking bowl open")

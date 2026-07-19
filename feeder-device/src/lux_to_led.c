@@ -491,9 +491,9 @@ void detection_led_task(void *para)
                             .g = 35,
                             .b = 0
                         };
+                        ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
                         vTaskDelay(pdMS_TO_TICKS(100));
                     }
-                                    ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
 
 
                 } else if (strcmp(right_spin_mode, "R")){
@@ -503,10 +503,9 @@ void detection_led_task(void *para)
                             .g = 35,
                             .b = 0
                         };
+                       ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
                         vTaskDelay(pdMS_TO_TICKS(100));
                     }
-                    ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
-
                 }
 
                 //idle 

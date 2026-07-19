@@ -518,7 +518,7 @@ void detection_led_task(void *para)
                             .b = 0
                         };
                        ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
-                        vTaskDelay(pdMS_TO_TICKS(100));
+                        vTaskDelay(pdMS_TO_TICKS(10));
                     }
             }
             

@@ -362,7 +362,8 @@ void detection_led_task(void *para)
          * DENY command:
          * Blink both detection LED sections red.
          */
-        if ((strcmp(pi_command_deny, "DENY") == 0)) {
+        if (!left_manual_mode || !right_manual_mode){
+             if ((strcmp(pi_command_deny, "DENY") == 0)) {
             if  ((currTime - last_command_deny_time) < pdMS_TO_TICKS(3000)){
                 command_active_l = true;
                 command_active_r = true;
@@ -408,6 +409,7 @@ void detection_led_task(void *para)
                 command_active_l = false;
                 command_active_r = false; 
             }
+        }
         }
 
         /*
@@ -475,7 +477,7 @@ void detection_led_task(void *para)
                 for (int i = 0; i < LED_NUM_W_STR; i++) {
                     ws2812_buffer[i] = (CRGB){
                         .r = 100,
-                        .g = 65,
+                        .g = 35,
                         .b = 0
                     };
                 }

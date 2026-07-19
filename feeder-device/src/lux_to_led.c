@@ -427,7 +427,7 @@ void detection_led_task(void *para)
          * This runs only when none of the commands above matched.
          */
         if (!command_active_r ) {
-             if (!right_manual_mode || ((strcmp(right_spin_mode, "S")) == 0)){
+             if (!right_manual_mode ){
                     if (lux >= 120){
                     for (int i = 0; i < LED_NUM_W_STR; i++) {
                         ws2812_buffer[i] = (CRGB){
@@ -483,8 +483,22 @@ void detection_led_task(void *para)
 
                 ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
             }
-             } 
-             else if (strcmp(right_spin_mode, "F") == 0){
+             } else { //in manual mode
+
+                //idle 
+                for (int i = 0; i < LED_NUM_W_STR; i++) {
+                    ws2812_buffer[i] = (CRGB){
+                        .r = 100,
+                        .g = 35,
+                        .b = 0
+                    };
+                }
+
+                ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+
+             }
+
+             if (strcmp(right_spin_mode, "F") == 0){
                     for (int i = 0; i < LED_NUM_W_STR; i++) {
                         ws2812_buffer[i] = (CRGB){
                             .r = 100,
@@ -507,21 +521,6 @@ void detection_led_task(void *para)
                         vTaskDelay(pdMS_TO_TICKS(100));
                     }
             }
-            
-             else { //in manual mode
-
-                //idle 
-                for (int i = 0; i < LED_NUM_W_STR; i++) {
-                    ws2812_buffer[i] = (CRGB){
-                        .r = 100,
-                        .g = 35,
-                        .b = 0
-                    };
-                }
-
-                ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
-
-             }
             
         }
 

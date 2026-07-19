@@ -327,6 +327,44 @@ export async function fetchFeedingEvents(limit = 10) {
   })) as FeedingEventRow[];
 }
 
+export async function fetchActivityFeedingEvents(limit = 20) {
+  const [latestDeniedEvents, recentMeaningfulEvents] = await Promise.all([
+    fetchFeedingEventsByQuery(1, (query) => query.eq('event_type', 'denied')),
+    fetchFeedingEventsByQuery(limit, (query) => query.neq('event_type', 'denied')),
+  ]);
+
+  return [...latestDeniedEvents, ...recentMeaningfulEvents]
+    .sort((first, second) => new Date(second.occurred_at).getTime() - new Date(first.occurred_at).getTime());
+}
+
+async function fetchFeedingEventsByQuery(
+  limit: number,
+  applyFilters: (
+    query: ReturnType<typeof supabase.from<'feeding_events'>>,
+  ) => ReturnType<typeof supabase.from<'feeding_events'>>,
+) {
+  let query = supabase
+    .from('feeding_events')
+    .select(
+      'id, pet_id, event_type, occurred_at, authorized, amount_grams, recognition_label, recognition_confidence, notes, raw_payload, pets(name)',
+    );
+
+  query = applyFilters(query);
+
+  const { data, error } = await query
+    .order('occurred_at', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    throw error;
+  }
+
+  return (data ?? []).map((event) => ({
+    ...event,
+    pets: normalizeRelatedPet(event.pets),
+  })) as FeedingEventRow[];
+}
+
 export async function fetchTodayScheduleRuns() {
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);

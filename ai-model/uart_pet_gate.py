@@ -106,21 +106,21 @@ class CloudReporter:
             return
 
         with self.queue_lock:
-            dropped_stale = self._drop_queued_low_priority()
-            if dropped_stale:
-                self.dropped_telemetry += dropped_stale
-                if self.dropped_telemetry == dropped_stale or self.dropped_telemetry % 25 < dropped_stale:
-                    print(
-                        "Cloud ingest coalesced "
-                        f"{dropped_stale} stale telemetry payload(s); "
-                        f"total dropped {self.dropped_telemetry}"
-                    )
-
+            if low_priority:
+                self._coalesce_queued_telemetry()
             try:
                 self.queue.put_nowait((payload, low_priority))
                 return
             except queue.Full:
-                pass
+                if low_priority:
+                    pass
+                else:
+                    self._coalesce_queued_telemetry()
+                    try:
+                        self.queue.put_nowait((payload, low_priority))
+                        return
+                    except queue.Full:
+                        pass
 
         if low_priority:
             self.dropped_telemetry += 1
@@ -137,7 +137,7 @@ class CloudReporter:
             f"dropped important event payload #{self.dropped_events}: {payload}"
         )
 
-    def _drop_queued_low_priority(self):
+    def _coalesce_queued_telemetry(self):
         kept = []
         dropped = 0
 
@@ -160,7 +160,14 @@ class CloudReporter:
             except queue.Full:
                 dropped += 1
 
-        return dropped
+        if dropped:
+            self.dropped_telemetry += dropped
+            if self.dropped_telemetry == dropped or self.dropped_telemetry % 25 < dropped:
+                print(
+                    "Cloud ingest coalesced "
+                    f"{dropped} stale telemetry payload(s); "
+                    f"total dropped {self.dropped_telemetry}"
+                )
 
     def stop(self):
         if not self.enabled or self.thread is None:

@@ -3,6 +3,7 @@
 
 alter table public.device_status replica identity full;
 alter table public.feeding_events replica identity full;
+alter table public.schedule_runs replica identity full;
 alter table public.pets replica identity full;
 alter table public.feeding_schedules replica identity full;
 
@@ -26,6 +27,16 @@ begin
       and tablename = 'feeding_events'
   ) then
     alter publication supabase_realtime add table public.feeding_events;
+  end if;
+
+  if not exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'schedule_runs'
+  ) then
+    alter publication supabase_realtime add table public.schedule_runs;
   end if;
 
   if not exists (

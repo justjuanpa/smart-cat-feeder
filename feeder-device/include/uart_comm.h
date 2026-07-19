@@ -5,7 +5,7 @@
 #include "driver/uart.h"
 #include "esp_err.h"
 
-#define UART_COMM_PORT UART_NUM_1
+#define UART_COMM_PORT UART_NUM_1 //change back to one on the custom pcb
 #define UART_COMM_TX_PIN 43
 #define UART_COMM_RX_PIN 44
 #define UART_COMM_BAUD_RATE 115200
@@ -29,7 +29,7 @@ esp_err_t uart_comm_send_string(const char *str);
 int uart_comm_read_bytes(uint8_t *buffer, size_t max_len, uint32_t timeout_ms);
 
 //reads raw binary data 
-esp_err_t uart_comm_recieve_bytes(const uint8_t *data, size_t len);
+esp_err_t uart_comm_recieve_bytes(uint8_t *data, size_t len);
 
 //reads text
 int uart_comm_read_string(char *str, size_t max_len, uint32_t timeout_ms);

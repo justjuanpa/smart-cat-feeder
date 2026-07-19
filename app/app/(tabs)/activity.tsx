@@ -1,6 +1,7 @@
+import { Image } from 'expo-image';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { usePawsRealtime } from '@/hooks/use-paws-realtime';
@@ -8,7 +9,6 @@ import { useSupabaseSession } from '@/hooks/use-supabase-session';
 import {
   fetchFeedingEvents,
   fetchPets,
-  logManualFeedingEvent,
   type FeedingEventRow,
   type PetRow,
 } from '@/utils/paws-data';
@@ -18,8 +18,8 @@ export default function ActivityScreen() {
   const { session } = useSupabaseSession();
   const [events, setEvents] = useState<FeedingEventRow[]>([]);
   const [pets, setPets] = useState<PetRow[]>([]);
+  const [failedAvatarIds, setFailedAvatarIds] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadActivity = useCallback(async () => {
@@ -30,6 +30,7 @@ export default function ActivityScreen() {
       const [nextEvents, nextPets] = await Promise.all([fetchFeedingEvents(), fetchPets()]);
       setEvents(nextEvents);
       setPets(nextPets);
+      setFailedAvatarIds(new Set());
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load activity.');
     } finally {
@@ -47,27 +48,6 @@ export default function ActivityScreen() {
     userId: session?.user.id,
     onActivityChange: loadActivity,
   });
-
-  async function logDemoEvent() {
-    if (!session?.user || pets.length === 0) {
-      Alert.alert('No pet yet', 'Create pet profiles from the Pets tab first.');
-      return;
-    }
-
-    setSaving(true);
-
-    try {
-      await logManualFeedingEvent(session.user.id, pets[0]);
-      await loadActivity();
-    } catch (eventError) {
-      Alert.alert(
-        'Could not log event',
-        eventError instanceof Error ? eventError.message : 'Try again in a moment.',
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -89,14 +69,6 @@ export default function ActivityScreen() {
           </View>
         ) : null}
 
-        <Pressable
-          disabled={saving}
-          onPress={logDemoEvent}
-          style={[styles.primaryButton, saving && styles.disabledButton]}>
-          <MaterialIcons name="add-circle" size={22} color="#FFFFFF" />
-          <Text style={styles.primaryButtonText}>{saving ? 'Logging...' : 'Log demo feeding event'}</Text>
-        </Pressable>
-
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Recent events</Text>
           {events.length === 0 ? (
@@ -104,21 +76,39 @@ export default function ActivityScreen() {
               {loading ? 'Loading activity...' : 'No events yet. The Pi will add allow/deny events here.'}
             </Text>
           ) : (
-            events.map((event) => (
-              <View key={event.id} style={styles.eventRow}>
-                <View style={styles.eventIcon}>
-                  <MaterialIcons name={eventIcon(event.event_type)} size={20} color="#1D4FA3" />
+            events.map((event) => {
+              const pet = petForEvent(event, pets);
+
+              return (
+                <View key={event.id} style={styles.eventRow}>
+                  <PetAvatar
+                    eventType={event.event_type}
+                    failedAvatarIds={failedAvatarIds}
+                    onAvatarError={(petId) =>
+                      setFailedAvatarIds((currentIds) => {
+                        const nextIds = new Set(currentIds);
+                        nextIds.add(petId);
+                        return nextIds;
+                      })
+                    }
+                    pet={pet}
+                  />
+                  <View style={styles.rowText}>
+                    <Text style={styles.cardTitle}>
+                      {pet?.name ?? event.pets?.name ?? event.recognition_label ?? 'Unknown pet'}
+                    </Text>
+                    <Text style={styles.muted}>{eventSummary(event)}</Text>
+                    {scheduledDispenseDetail(event) ? (
+                      <Text style={styles.small}>{scheduledDispenseDetail(event)}</Text>
+                    ) : null}
+                  </View>
+                  <View style={styles.eventMeta}>
+                    <Text style={styles.small}>{formatTime(event.occurred_at)}</Text>
+                    <Text style={styles.amount}>{formatEventAmount(event)}</Text>
+                  </View>
                 </View>
-                <View style={styles.rowText}>
-                  <Text style={styles.cardTitle}>{event.pets?.name ?? event.recognition_label ?? 'Unknown pet'}</Text>
-                  <Text style={styles.muted}>{eventSummary(event)}</Text>
-                </View>
-                <View style={styles.eventMeta}>
-                  <Text style={styles.small}>{formatTime(event.occurred_at)}</Text>
-                  <Text style={styles.amount}>{formatGrams(event.amount_grams)}</Text>
-                </View>
-              </View>
-            ))
+              );
+            })
           )}
         </View>
       </ScrollView>
@@ -126,7 +116,62 @@ export default function ActivityScreen() {
   );
 }
 
+function PetAvatar({
+  eventType,
+  failedAvatarIds,
+  onAvatarError,
+  pet,
+}: {
+  eventType: string;
+  failedAvatarIds: Set<string>;
+  onAvatarError: (petId: string) => void;
+  pet: PetRow | null;
+}) {
+  if (pet?.avatar_url && !failedAvatarIds.has(pet.id)) {
+    return (
+      <View style={styles.eventIcon}>
+        <Image
+          contentFit="cover"
+          onError={() => onAvatarError(pet.id)}
+          source={{ uri: pet.avatar_url }}
+          style={styles.avatarImage}
+        />
+      </View>
+    );
+  }
+
+  if (pet) {
+    return (
+      <View style={styles.eventIcon}>
+        <Text style={styles.initial}>{pet.name[0]}</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.eventIcon}>
+      <MaterialIcons name={eventIcon(eventType)} size={20} color="#1D4FA3" />
+    </View>
+  );
+}
+
+function petForEvent(event: FeedingEventRow, pets: PetRow[]) {
+  return (
+    pets.find((pet) => pet.id === event.pet_id) ??
+    pets.find(
+      (pet) =>
+        pet.name.toLowerCase() === event.recognition_label?.toLowerCase() ||
+        pet.name.toLowerCase() === event.pets?.name?.toLowerCase(),
+    ) ??
+    null
+  );
+}
+
 function eventIcon(type: string): keyof typeof MaterialIcons.glyphMap {
+  if (type === 'scheduled_dry_run') {
+    return 'schedule';
+  }
+
   if (type === 'denied') {
     return 'block';
   }
@@ -139,6 +184,18 @@ function eventIcon(type: string): keyof typeof MaterialIcons.glyphMap {
 }
 
 function eventSummary(event: FeedingEventRow) {
+  if (isScheduledDispense(event)) {
+    const payload = event.raw_payload ?? {};
+    const context = payload.scheduled_context;
+    const mealName =
+      isRecord(context) && typeof context.meal_name === 'string'
+        ? context.meal_name
+        : 'Scheduled meal';
+    const side = typeof payload.side === 'string' ? payload.side.toLowerCase() : 'bowl';
+
+    return `${mealName} added ${formatEventAmount(event)} to the ${side} bowl.`;
+  }
+
   if (event.notes) {
     return event.notes;
   }
@@ -147,7 +204,69 @@ function eventSummary(event: FeedingEventRow) {
     return 'Manual event from the mobile app.';
   }
 
+  if (event.event_type === 'scheduled_dry_run') {
+    return 'Scheduled meal dry-run decision.';
+  }
+
   return `${event.event_type} event${event.authorized === false ? ': access denied' : ''}.`;
+}
+
+function scheduledDispenseDetail(event: FeedingEventRow) {
+  if (!isScheduledDispense(event)) {
+    return null;
+  }
+
+  const payload = event.raw_payload ?? {};
+  const finalWeight = numberFromUnknown(payload.final_weight_grams ?? payload.latest_weight_grams);
+  const context = payload.scheduled_context;
+  const target =
+    isRecord(context) ? numberFromUnknown(context.target_grams) : null;
+
+  if (finalWeight == null && target == null) {
+    return null;
+  }
+
+  const parts = [];
+  if (finalWeight != null) {
+    parts.push(`Bowl now ${formatGrams(finalWeight)}`);
+  }
+  if (target != null) {
+    parts.push(`target ${formatGrams(target)}`);
+  }
+
+  return parts.join(' / ');
+}
+
+function formatEventAmount(event: FeedingEventRow) {
+  if (event.amount_grams == null) {
+    return '--';
+  }
+
+  return formatGrams(event.amount_grams);
+}
+
+function isScheduledDispense(event: FeedingEventRow) {
+  return (
+    event.event_type === 'dispensed' &&
+    event.raw_payload?.access_lid_opened === false
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function numberFromUnknown(value: unknown) {
+  if (typeof value === 'number') {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
 }
 
 const styles = StyleSheet.create({
@@ -186,23 +305,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 48,
   },
-  primaryButton: {
-    alignItems: 'center',
-    backgroundColor: '#1D4FA3',
-    borderRadius: 8,
-    flexDirection: 'row',
-    gap: 8,
-    justifyContent: 'center',
-    padding: 16,
-  },
-  primaryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  disabledButton: {
-    opacity: 0.7,
-  },
   card: {
     backgroundColor: '#FFFFFF',
     borderColor: '#D8E2F3',
@@ -230,7 +332,17 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     height: 40,
     justifyContent: 'center',
+    overflow: 'hidden',
     width: 40,
+  },
+  avatarImage: {
+    height: '100%',
+    width: '100%',
+  },
+  initial: {
+    color: '#1D4FA3',
+    fontSize: 18,
+    fontWeight: '900',
   },
   rowText: {
     flex: 1,

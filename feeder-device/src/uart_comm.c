@@ -1,14 +1,24 @@
 #include "uart_comm.h"
+#include <stdbool.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 
 static bool uart_comm_initialized = false;
+static SemaphoreHandle_t uart_comm_tx_mutex = NULL;
 
 esp_err_t uart_comm_init(void)
 {
     if (uart_comm_initialized) {
         return ESP_OK;
+    }
+
+    if (uart_comm_tx_mutex == NULL) {
+        uart_comm_tx_mutex = xSemaphoreCreateMutex();
+        if (uart_comm_tx_mutex == NULL) {
+            return ESP_ERR_NO_MEM;
+        }
     }
 
     uart_config_t uart_config = {
@@ -64,7 +74,15 @@ esp_err_t uart_comm_send_bytes(const uint8_t *data, size_t len)
         return ESP_ERR_INVALID_ARG;
     }
 
+    if (uart_comm_tx_mutex != NULL) {
+        xSemaphoreTake(uart_comm_tx_mutex, portMAX_DELAY);
+    }
+
     int bytes_written = uart_write_bytes(UART_COMM_PORT, data, len);
+
+    if (uart_comm_tx_mutex != NULL) {
+        xSemaphoreGive(uart_comm_tx_mutex);
+    }
 
     if (bytes_written < 0){
         return ESP_FAIL;
@@ -80,7 +98,15 @@ esp_err_t uart_comm_send_string(const char *str)
         return ESP_ERR_INVALID_ARG;
     }
 
+    if (uart_comm_tx_mutex != NULL) {
+        xSemaphoreTake(uart_comm_tx_mutex, portMAX_DELAY);
+    }
+
     int bytes_written = uart_write_bytes(UART_COMM_PORT, str, strlen(str));
+
+    if (uart_comm_tx_mutex != NULL) {
+        xSemaphoreGive(uart_comm_tx_mutex);
+    }
 
     if (bytes_written < 0){
         return ESP_FAIL;

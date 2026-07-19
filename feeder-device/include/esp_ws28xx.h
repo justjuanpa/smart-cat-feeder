@@ -1,33 +1,35 @@
 #ifndef MAIN_ESP_WS28XX_H_
-#define MAIN_ESP_WS29XX_H_
+#define MAIN_ESP_WS28XX_H_
+
+// your declarations here
 
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
 #include <stdio.h>
 #include <string.h>
 
-typedef struct{
-    union {
-        struct {
-            union {
-                uint8_t r;
-                uint8_t red;
-            };
-
-            union {
-                uint16_t g;
-                uint8_t green;
-            };
-
-            union {
-                uint8_t b;
-                uint8_t blue;
-            };
+typedef union {
+    struct {
+        union {
+            uint8_t r;
+            uint8_t red;
         };
 
-        uint8_t raw[3];
-        uint32_t num;
+        union {
+            uint8_t g;
+            uint8_t green;
+        };
+
+        union {
+            uint8_t b;
+            uint8_t blue;
+        };
+
+        uint8_t reserved;
     };
+
+    uint8_t raw[4];
+    uint32_t num;
 } CRGB;
 
 typedef struct {
@@ -48,4 +50,5 @@ esp_err_t ws28xx_init(int pin, led_strip_model_t model, int num_of_leds, CRGB **
 void ws28xx_fill_all(CRGB color);
 esp_err_t ws28xx_update();
 
-#endif /* MAIN_ESP_WS28XX_H_ */
+
+#endif // MAIN_ESP_WS28XX_H_

@@ -71,6 +71,16 @@ export function usePawsRealtime({
         },
         onPetChange,
       );
+      channel.on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'schedule_runs',
+          filter: `owner_id=eq.${userId}`,
+        },
+        onPetChange,
+      );
     }
 
     channel.subscribe();

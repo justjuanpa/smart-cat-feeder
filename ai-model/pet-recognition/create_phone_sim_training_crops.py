@@ -13,7 +13,7 @@ OUTPUT_DIR = SCRIPT_DIR / "train_phone_sim_crops"
 
 ALLOWED_CLASSES = {"cat", "dog", "teddy bear"}
 CONFIDENCE_THRESHOLD = 0.25
-PADDING_RATIO = 0.20
+PADDING_RATIO = 0.00
 
 PET_FOLDERS = {
     "pet1": INPUT_DIR / "pet1",

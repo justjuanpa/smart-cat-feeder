@@ -1,6 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.108.1';
 
-type FeedingEventType = 'authorized' | 'denied' | 'dispensed' | 'consumed';
+type FeedingEventType = 'authorized' | 'denied' | 'dispensed' | 'consumed' | 'scheduled_dry_run';
 
 type DevicePayload = {
   serial_number?: string;
@@ -26,7 +26,13 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
-const eventTypes = new Set<FeedingEventType>(['authorized', 'denied', 'dispensed', 'consumed']);
+const eventTypes = new Set<FeedingEventType>([
+  'authorized',
+  'denied',
+  'dispensed',
+  'consumed',
+  'scheduled_dry_run',
+]);
 
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') {
@@ -102,25 +108,34 @@ Deno.serve(async (request) => {
     return jsonResponse({ error: statusError.message }, 500);
   }
 
-  const { error: deviceStatusError } = await supabase
-    .from('device_status')
-    .upsert({
+  let deviceStatusRow;
+
+  try {
+    deviceStatusRow = await buildDeviceStatusRow(supabase, {
       device_id: device.id,
       owner_id: device.owner_id,
-      online: true,
-      current_weight_grams: payload.current_weight_grams ?? undefined,
-      left_bowl_weight_grams: payload.left_bowl_weight_grams ?? undefined,
-      right_bowl_weight_grams: payload.right_bowl_weight_grams ?? undefined,
-      last_motion_at: payload.motion_detected ? now : undefined,
-      last_event_at: payload.event_type ? occurredAt : undefined,
-      firmware_version: payload.firmware_version ?? undefined,
-      vision_version: payload.vision_version ?? undefined,
-      updated_at: now,
+      payload,
+      now,
+      occurred_at: occurredAt,
     });
+  } catch (statusBuildError) {
+    const message = statusBuildError instanceof Error ? statusBuildError.message : 'Could not build device status row.';
+    return jsonResponse({ error: message }, 500);
+  }
+
+  const { error: deviceStatusError } = await supabase
+    .from('device_status')
+    .upsert(deviceStatusRow);
 
   if (deviceStatusError) {
     return jsonResponse({ error: deviceStatusError.message }, 500);
   }
+
+  const { data: updatedDeviceStatus } = await supabase
+    .from('device_status')
+    .select('current_weight_grams, left_bowl_weight_grams, right_bowl_weight_grams, updated_at')
+    .eq('device_id', device.id)
+    .maybeSingle();
 
   if (!payload.event_type) {
     return jsonResponse({
@@ -128,6 +143,7 @@ Deno.serve(async (request) => {
       device_id: device.id,
       status_updated: true,
       feeding_event_created: false,
+      device_status: updatedDeviceStatus,
     });
   }
 
@@ -154,13 +170,75 @@ Deno.serve(async (request) => {
     return jsonResponse({ error: eventError.message }, 500);
   }
 
+  if (payload.event_type === 'dispensed') {
+    const scheduleRunId = scheduledRunIdFromPayload(payload.raw_payload);
+
+    if (scheduleRunId) {
+      const { error: runUpdateError } = await supabase
+        .from('schedule_runs')
+        .update({
+          status: 'dispensed',
+          notes: payload.notes ?? null,
+          raw_payload: payload.raw_payload ?? payload,
+        })
+        .eq('id', scheduleRunId)
+        .eq('owner_id', device.owner_id);
+
+      if (runUpdateError) {
+        return jsonResponse({ error: runUpdateError.message }, 500);
+      }
+    }
+  }
+
   return jsonResponse({
     ok: true,
     device_id: device.id,
     feeding_event_id: event.id,
     feeding_event_created: true,
+    device_status: updatedDeviceStatus,
   });
 });
+
+async function buildDeviceStatusRow(
+  supabase: ReturnType<typeof createClient>,
+  {
+    device_id,
+    owner_id,
+    payload,
+    now,
+    occurred_at,
+  }: {
+    device_id: string;
+    owner_id: string;
+    payload: DevicePayload;
+    now: string;
+    occurred_at: string;
+  },
+) {
+  const { data: existingStatus, error } = await supabase
+    .from('device_status')
+    .select('current_weight_grams, left_bowl_weight_grams, right_bowl_weight_grams, last_motion_at, last_event_at, firmware_version, vision_version')
+    .eq('device_id', device_id)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return {
+    device_id,
+    owner_id,
+    online: true,
+    current_weight_grams: payload.current_weight_grams ?? existingStatus?.current_weight_grams ?? null,
+    left_bowl_weight_grams: payload.left_bowl_weight_grams ?? existingStatus?.left_bowl_weight_grams ?? null,
+    right_bowl_weight_grams: payload.right_bowl_weight_grams ?? existingStatus?.right_bowl_weight_grams ?? null,
+    last_motion_at: payload.motion_detected ? now : existingStatus?.last_motion_at ?? null,
+    last_event_at: payload.event_type ? occurred_at : existingStatus?.last_event_at ?? null,
+    firmware_version: payload.firmware_version ?? existingStatus?.firmware_version ?? null,
+    vision_version: payload.vision_version ?? existingStatus?.vision_version ?? null,
+    updated_at: now,
+  };
+}
 
 async function findPetId(
   supabase: ReturnType<typeof createClient>,
@@ -183,6 +261,17 @@ async function findPetId(
   }
 
   return data?.id ?? null;
+}
+
+function scheduledRunIdFromPayload(rawPayload?: Record<string, unknown>) {
+  const scheduledContext = rawPayload?.scheduled_context;
+
+  if (!scheduledContext || typeof scheduledContext !== 'object') {
+    return null;
+  }
+
+  const scheduleRunId = (scheduledContext as Record<string, unknown>).schedule_run_id;
+  return typeof scheduleRunId === 'string' ? scheduleRunId : null;
 }
 
 async function sha256Hex(value: string) {

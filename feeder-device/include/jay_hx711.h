@@ -27,4 +27,8 @@ void load_cell_task(void *parameters);
 void load_cell_task_en(bool val);
 void load_cell_enable_left(bool val);
 void load_cell_enable_right(bool val);
+void load_cell_start_left_target(int target_grams, bool open_lid_on_complete);
+void load_cell_start_right_target(int target_grams, bool open_lid_on_complete);
 void load_cell_stop_all(void);
+int leftGramData(void);
+int rightGramData(void);

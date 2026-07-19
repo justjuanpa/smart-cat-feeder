@@ -69,11 +69,22 @@ provisioning:
 
    ```bash
    supabase functions deploy ingest-device
+   supabase functions deploy device-schedules
+   supabase functions deploy claim-schedule-run
    ```
 
 The function has `verify_jwt = false` in `supabase/config.toml` because device
 authentication is handled with the per-device token in the
 `x-paws-device-token` header.
+
+If your database already existed before scheduled dry-run events were added,
+run `supabase/add-scheduled-dry-run-event-type.sql` once in the Supabase SQL
+Editor before testing the scheduler.
+
+Before enabling real scheduled dispensing, run
+`supabase/add-schedule-runs.sql` once in the Supabase SQL Editor. This creates
+the persistent run log that prevents a scheduled meal occurrence from being
+claimed twice.
 
 ### Test From The Pi Or Laptop
 
@@ -98,17 +109,48 @@ python ai-model/device-ingestion/paws_ingest_client.py \
   --notes "Camera-only integration test"
 ```
 
+Schedule dry-run polling from `uart_pet_gate.py` uses the same device token as
+ingest. If `PAWS_INGEST_URL` ends in `/ingest-device`, the Pi automatically
+derives the schedule endpoint by replacing that suffix with `/device-schedules`.
+It also derives the run-claim endpoint by replacing that suffix with
+`/claim-schedule-run`. You can also set them explicitly:
+
+```bash
+export PAWS_SCHEDULE_URL="https://YOUR_PROJECT_REF.supabase.co/functions/v1/device-schedules"
+export PAWS_CLAIM_SCHEDULE_RUN_URL="https://YOUR_PROJECT_REF.supabase.co/functions/v1/claim-schedule-run"
+```
+
+Real scheduled dispensing is opt-in on the Pi:
+
+```bash
+python ai-model/uart_pet_gate.py --enable-scheduled-dispense
+```
+
+Scheduled `FEED_LEFT` / `FEED_RIGHT` commands only dispense to the target bowl
+weight. The ESP32 replies with `DISPENSED_LEFT` / `DISPENSED_RIGHT` and leaves
+the access lid closed. The older CV-triggered `LEFT` / `RIGHT` commands still
+open the matching access lid after dispensing and reply with `OPENED_LEFT` /
+`OPENED_RIGHT`.
+
 ## Local Files
 
 - `supabase/schema.sql`: database tables, indexes, and Row Level Security.
 - `supabase/add-bowl-weight-columns.sql`: one-time helper for adding separate
   left/right bowl telemetry to an existing project.
+- `supabase/add-scheduled-dry-run-event-type.sql`: one-time helper for allowing
+  schedule dry-run decisions in an existing project.
+- `supabase/add-schedule-runs.sql`: one-time helper for scheduled-meal run
+  history and duplicate protection.
 - `supabase/enable-pet-image-storage.sql`: one-time helper for allowing signed-in
   users to upload private pet profile pictures.
 - `supabase/enable-realtime.sql`: enables realtime app refreshes for
   `device_status` and `feeding_events`.
 - `supabase/config.toml`: Supabase function settings.
 - `supabase/functions/ingest-device/index.ts`: secure device ingestion endpoint.
+- `supabase/functions/device-schedules/index.ts`: secure endpoint for the Pi to
+  fetch the owner's enabled feeding schedules.
+- `supabase/functions/claim-schedule-run/index.ts`: secure endpoint for the Pi
+  to claim one scheduled meal occurrence before sending a motor command.
 - `supabase/provision-demo-device.sql`: helper SQL for creating a prototype
   feeder credential.
 - `.env.example`: environment variables needed by the mobile app and backend

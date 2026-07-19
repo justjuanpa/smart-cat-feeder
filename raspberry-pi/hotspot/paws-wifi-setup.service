@@ -1,0 +1,18 @@
+[Unit]
+Description=PAWS Wi-Fi Setup Hotspot and Web Server
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/paws-wifi-setup
+ExecStartPre=/usr/bin/nmcli radio wifi on
+ExecStartPre=-/usr/bin/nm-online -q --timeout=15
+ExecStartPre=/usr/bin/nmcli connection up PAWS_Setup ifname wlan0
+ExecStart=/usr/bin/python3 -u /opt/paws-wifi-setup/hotspot.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

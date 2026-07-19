@@ -2,6 +2,8 @@
 #define LEDSTRIP_H
 
 void ledstrip_task(void *parameters);
-void read_TSL2591(void *parameters);
+void lux_data_task(void *parameters);
+void i2c_test_task(void *parameters);
+bool ledStats(void);
 
-#endif LEDSTRIP_H
+#endif // LEDSTRIP_H

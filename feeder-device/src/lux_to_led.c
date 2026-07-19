@@ -496,7 +496,7 @@ void detection_led_task(void *para)
 
                     }
             }             
-            else if (strcmp(right_spin_mode, "R")){
+            else if (strcmp(right_spin_mode, "R") == 0){
                     for (int i = LED_NUM_W_STR; i > 0; i--) {
                         ws2812_buffer[i] = (CRGB){
                             .r = 100,
@@ -506,8 +506,8 @@ void detection_led_task(void *para)
                        ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
                         vTaskDelay(pdMS_TO_TICKS(100));
                     }
-                }
-             }
+            }
+            
              else { //in manual mode
 
                 //idle 

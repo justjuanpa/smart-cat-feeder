@@ -347,6 +347,12 @@ export async function fetchTodayScheduleRuns() {
 }
 
 export async function fetchLatestScheduledDispense() {
+  const events = await fetchLatestScheduledDispenses();
+
+  return events[0] ?? null;
+}
+
+export async function fetchLatestScheduledDispenses() {
   const { data, error } = await supabase
     .from('feeding_events')
     .select(
@@ -355,21 +361,16 @@ export async function fetchLatestScheduledDispense() {
     .eq('event_type', 'dispensed')
     .filter('raw_payload->>access_lid_opened', 'eq', 'false')
     .order('occurred_at', { ascending: false })
-    .limit(1);
+    .limit(25);
 
   if (error) {
     throw error;
   }
 
-  const event = data?.[0];
-  if (!event) {
-    return null;
-  }
-
-  return {
+  return (data ?? []).map((event) => ({
     ...event,
     pets: normalizeRelatedPet(event.pets),
-  } as FeedingEventRow;
+  })) as FeedingEventRow[];
 }
 
 export async function fetchLatestDeviceStatus() {

@@ -1,3 +1,4 @@
+import { Image } from 'expo-image';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -7,13 +8,17 @@ import { usePawsRealtime } from '@/hooks/use-paws-realtime';
 import { useSupabaseSession } from '@/hooks/use-supabase-session';
 import {
   fetchFeedingEvents,
+  fetchPets,
   type FeedingEventRow,
+  type PetRow,
 } from '@/utils/paws-data';
 import { formatGrams, formatTime } from '@/utils/formatters';
 
 export default function ActivityScreen() {
   const { session } = useSupabaseSession();
   const [events, setEvents] = useState<FeedingEventRow[]>([]);
+  const [pets, setPets] = useState<PetRow[]>([]);
+  const [failedAvatarIds, setFailedAvatarIds] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -22,8 +27,10 @@ export default function ActivityScreen() {
     setError(null);
 
     try {
-      const nextEvents = await fetchFeedingEvents();
+      const [nextEvents, nextPets] = await Promise.all([fetchFeedingEvents(), fetchPets()]);
       setEvents(nextEvents);
+      setPets(nextPets);
+      setFailedAvatarIds(new Set());
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load activity.');
     } finally {
@@ -69,28 +76,94 @@ export default function ActivityScreen() {
               {loading ? 'Loading activity...' : 'No events yet. The Pi will add allow/deny events here.'}
             </Text>
           ) : (
-            events.map((event) => (
-              <View key={event.id} style={styles.eventRow}>
-                <View style={styles.eventIcon}>
-                  <MaterialIcons name={eventIcon(event.event_type)} size={20} color="#1D4FA3" />
+            events.map((event) => {
+              const pet = petForEvent(event, pets);
+
+              return (
+                <View key={event.id} style={styles.eventRow}>
+                  <PetAvatar
+                    eventType={event.event_type}
+                    failedAvatarIds={failedAvatarIds}
+                    onAvatarError={(petId) =>
+                      setFailedAvatarIds((currentIds) => {
+                        const nextIds = new Set(currentIds);
+                        nextIds.add(petId);
+                        return nextIds;
+                      })
+                    }
+                    pet={pet}
+                  />
+                  <View style={styles.rowText}>
+                    <Text style={styles.cardTitle}>
+                      {pet?.name ?? event.pets?.name ?? event.recognition_label ?? 'Unknown pet'}
+                    </Text>
+                    <Text style={styles.muted}>{eventSummary(event)}</Text>
+                    {scheduledDispenseDetail(event) ? (
+                      <Text style={styles.small}>{scheduledDispenseDetail(event)}</Text>
+                    ) : null}
+                  </View>
+                  <View style={styles.eventMeta}>
+                    <Text style={styles.small}>{formatTime(event.occurred_at)}</Text>
+                    <Text style={styles.amount}>{formatEventAmount(event)}</Text>
+                  </View>
                 </View>
-                <View style={styles.rowText}>
-                  <Text style={styles.cardTitle}>{event.pets?.name ?? event.recognition_label ?? 'Unknown pet'}</Text>
-                  <Text style={styles.muted}>{eventSummary(event)}</Text>
-                  {scheduledDispenseDetail(event) ? (
-                    <Text style={styles.small}>{scheduledDispenseDetail(event)}</Text>
-                  ) : null}
-                </View>
-                <View style={styles.eventMeta}>
-                  <Text style={styles.small}>{formatTime(event.occurred_at)}</Text>
-                  <Text style={styles.amount}>{formatEventAmount(event)}</Text>
-                </View>
-              </View>
-            ))
+              );
+            })
           )}
         </View>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function PetAvatar({
+  eventType,
+  failedAvatarIds,
+  onAvatarError,
+  pet,
+}: {
+  eventType: string;
+  failedAvatarIds: Set<string>;
+  onAvatarError: (petId: string) => void;
+  pet: PetRow | null;
+}) {
+  if (pet?.avatar_url && !failedAvatarIds.has(pet.id)) {
+    return (
+      <View style={styles.eventIcon}>
+        <Image
+          contentFit="cover"
+          onError={() => onAvatarError(pet.id)}
+          source={{ uri: pet.avatar_url }}
+          style={styles.avatarImage}
+        />
+      </View>
+    );
+  }
+
+  if (pet) {
+    return (
+      <View style={styles.eventIcon}>
+        <Text style={styles.initial}>{pet.name[0]}</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.eventIcon}>
+      <MaterialIcons name={eventIcon(eventType)} size={20} color="#1D4FA3" />
+    </View>
+  );
+}
+
+function petForEvent(event: FeedingEventRow, pets: PetRow[]) {
+  return (
+    pets.find((pet) => pet.id === event.pet_id) ??
+    pets.find(
+      (pet) =>
+        pet.name.toLowerCase() === event.recognition_label?.toLowerCase() ||
+        pet.name.toLowerCase() === event.pets?.name?.toLowerCase(),
+    ) ??
+    null
   );
 }
 
@@ -161,7 +234,7 @@ function scheduledDispenseDetail(event: FeedingEventRow) {
     parts.push(`target ${formatGrams(target)}`);
   }
 
-  return parts.join(' · ');
+  return parts.join(' / ');
 }
 
 function formatEventAmount(event: FeedingEventRow) {
@@ -259,7 +332,17 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     height: 40,
     justifyContent: 'center',
+    overflow: 'hidden',
     width: 40,
+  },
+  avatarImage: {
+    height: '100%',
+    width: '100%',
+  },
+  initial: {
+    color: '#1D4FA3',
+    fontSize: 18,
+    fontWeight: '900',
   },
   rowText: {
     flex: 1,

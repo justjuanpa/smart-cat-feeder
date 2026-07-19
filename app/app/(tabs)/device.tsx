@@ -1,3 +1,4 @@
+import { Image } from 'expo-image';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -7,9 +8,11 @@ import { usePawsRealtime } from '@/hooks/use-paws-realtime';
 import { useSupabaseSession } from '@/hooks/use-supabase-session';
 import {
   fetchLatestDeviceStatus,
-  fetchLatestScheduledDispense,
+  fetchLatestScheduledDispenses,
+  fetchPets,
   type DeviceStatusRow,
   type FeedingEventRow,
+  type PetRow,
 } from '@/utils/paws-data';
 import { supabase } from '@/utils/supabase';
 import { formatGrams, formatRelativeTime, formatTime } from '@/utils/formatters';
@@ -17,8 +20,9 @@ import { formatGrams, formatRelativeTime, formatTime } from '@/utils/formatters'
 export default function DeviceScreen() {
   const { session } = useSupabaseSession();
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatusRow | null>(null);
-  const [latestScheduledDispense, setLatestScheduledDispense] =
-    useState<FeedingEventRow | null>(null);
+  const [latestScheduledDispenses, setLatestScheduledDispenses] = useState<FeedingEventRow[]>([]);
+  const [pets, setPets] = useState<PetRow[]>([]);
+  const [failedAvatarIds, setFailedAvatarIds] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,12 +31,15 @@ export default function DeviceScreen() {
     setError(null);
 
     try {
-      const [nextStatus, nextScheduledDispense] = await Promise.all([
+      const [nextStatus, nextScheduledDispenses, nextPets] = await Promise.all([
         fetchLatestDeviceStatus(),
-        fetchLatestScheduledDispense(),
+        fetchLatestScheduledDispenses(),
+        fetchPets(),
       ]);
       setDeviceStatus(nextStatus);
-      setLatestScheduledDispense(nextScheduledDispense);
+      setLatestScheduledDispenses(nextScheduledDispenses);
+      setPets(nextPets);
+      setFailedAvatarIds(new Set());
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load device status.');
     } finally {
@@ -97,24 +104,40 @@ export default function DeviceScreen() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Last scheduled dispense</Text>
-          {latestScheduledDispense ? (
-            <View style={styles.lastDispenseRow}>
-              <View style={styles.statusIcon}>
-                <MaterialIcons name="restaurant" size={18} color="#1D4FA3" />
-              </View>
-              <View style={styles.rowText}>
-                <Text style={styles.cardTitle}>
-                  {latestScheduledDispense.pets?.name ??
-                    latestScheduledDispense.recognition_label ??
-                    'Pet'}{' '}
-                  at {formatTime(latestScheduledDispense.occurred_at)}
-                </Text>
-                <Text style={styles.muted}>{scheduledDispenseSummary(latestScheduledDispense)}</Text>
-              </View>
-            </View>
+          <Text style={styles.sectionTitle}>Last scheduled dispense by pet</Text>
+          {pets.length > 0 ? (
+            pets.map((pet) => {
+              const latestDispense = latestScheduledDispenseForPet(latestScheduledDispenses, pet);
+
+              return (
+                <View key={pet.id} style={styles.lastDispenseRow}>
+                  <PetAvatar
+                    failedAvatarIds={failedAvatarIds}
+                    onAvatarError={(petId) =>
+                      setFailedAvatarIds((currentIds) => {
+                        const nextIds = new Set(currentIds);
+                        nextIds.add(petId);
+                        return nextIds;
+                      })
+                    }
+                    pet={pet}
+                  />
+                  <View style={styles.rowText}>
+                    <Text style={styles.cardTitle}>
+                      {pet.name}
+                      {latestDispense ? ` at ${formatTime(latestDispense.occurred_at)}` : ''}
+                    </Text>
+                    <Text style={styles.muted}>
+                      {latestDispense
+                        ? scheduledDispenseSummary(latestDispense)
+                        : 'No scheduled dispense reported yet.'}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })
           ) : (
-            <Text style={styles.muted}>No scheduled dispense has been reported yet.</Text>
+            <Text style={styles.muted}>Create pet profiles to track scheduled dispenses per pet.</Text>
           )}
         </View>
 
@@ -123,7 +146,7 @@ export default function DeviceScreen() {
           <SetupRow done title="Supabase schema" detail="Tables and RLS are live" />
           <SetupRow done title="Mobile app backend" detail="Auth, profiles, events, and status connected" />
           <SetupRow done={online} title="Raspberry Pi bridge" detail={online ? 'Heartbeat received' : 'Waiting for Pi'} />
-          <SetupRow done={Boolean(latestScheduledDispense)} title="Motors and sensors" detail={latestScheduledDispense ? 'Scheduled dispense confirmed' : 'Waiting for scheduled dispense'} />
+          <SetupRow done={latestScheduledDispenses.length > 0} title="Motors and sensors" detail={latestScheduledDispenses.length > 0 ? 'Scheduled dispense confirmed' : 'Waiting for scheduled dispense'} />
         </View>
 
         <Pressable onPress={signOut} style={styles.secondaryButton}>
@@ -150,6 +173,47 @@ function formatBowlGrams(value: number | null) {
   return value == null ? '--' : formatGrams(value);
 }
 
+function PetAvatar({
+  failedAvatarIds,
+  onAvatarError,
+  pet,
+}: {
+  failedAvatarIds: Set<string>;
+  onAvatarError: (petId: string) => void;
+  pet: PetRow;
+}) {
+  if (pet.avatar_url && !failedAvatarIds.has(pet.id)) {
+    return (
+      <View style={styles.petAvatar}>
+        <Image
+          contentFit="cover"
+          onError={() => onAvatarError(pet.id)}
+          source={{ uri: pet.avatar_url }}
+          style={styles.avatarImage}
+        />
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.petAvatar}>
+      <Text style={styles.initial}>{pet.name[0]}</Text>
+    </View>
+  );
+}
+
+function latestScheduledDispenseForPet(events: FeedingEventRow[], pet: PetRow) {
+  return (
+    events.find((event) => event.pet_id === pet.id) ??
+    events.find(
+      (event) =>
+        event.recognition_label?.toLowerCase() === pet.name.toLowerCase() ||
+        event.pets?.name?.toLowerCase() === pet.name.toLowerCase(),
+    ) ??
+    null
+  );
+}
+
 function scheduledDispenseSummary(event: FeedingEventRow) {
   const payload = event.raw_payload ?? {};
   const context = payload.scheduled_context;
@@ -166,7 +230,7 @@ function scheduledDispenseSummary(event: FeedingEventRow) {
     finalWeight != null ? `now ${formatGrams(finalWeight)}` : null,
   ].filter(Boolean);
 
-  return parts.join(' · ');
+  return parts.join(' / ');
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -311,6 +375,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: 12,
+  },
+  petAvatar: {
+    alignItems: 'center',
+    backgroundColor: '#E0F2FE',
+    borderRadius: 8,
+    height: 40,
+    justifyContent: 'center',
+    overflow: 'hidden',
+    width: 40,
+  },
+  avatarImage: {
+    height: '100%',
+    width: '100%',
+  },
+  initial: {
+    color: '#1D4FA3',
+    fontSize: 18,
+    fontWeight: '900',
   },
   statusIcon: {
     alignItems: 'center',

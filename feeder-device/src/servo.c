@@ -342,6 +342,7 @@ void manual_left_servo_task(void *para){
         }
 
          //Remove any remaining bounce events.
+        led_receieve_manual_left(manual_overide_servo_l);
         while (xSemaphoreTake(xBTNLSem,0) == pdTRUE) {}
     }
 

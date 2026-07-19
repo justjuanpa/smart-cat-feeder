@@ -605,7 +605,7 @@ void detection_led_task(void *para)
                     }
             }             
             else if (strcmp(left_spin_mode, "R") == 0){
-                    for (int i = LED_NUM; i >= LED_NUM_W_END; i--) {
+                    for (int i = LED_NUM - 1;  i >= LED_NUM_W_END; i--) {
                         ws2812_buffer[i] = (CRGB){
                             .r = 100,
                             .g = 75,

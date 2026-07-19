@@ -426,8 +426,8 @@ void detection_led_task(void *para)
          * Idle mode:
          * This runs only when none of the commands above matched.
          */
-        if (!command_active_r || ((strcmp(right_spin_mode, "S")) == 0)) {
-             if (!right_manual_mode){
+        if (!command_active_r ) {
+             if (!right_manual_mode || ((strcmp(right_spin_mode, "S")) == 0)){
                     if (lux >= 120){
                     for (int i = 0; i < LED_NUM_W_STR; i++) {
                         ws2812_buffer[i] = (CRGB){

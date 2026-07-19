@@ -489,7 +489,7 @@ void detection_led_task(void *para)
                         ws2812_buffer[i] = (CRGB){
                             .r = 100,
                             .g = 35,
-                            .b = 0
+                            .b = 45
                         };
                         ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
                         vTaskDelay(pdMS_TO_TICKS(100));
@@ -501,7 +501,7 @@ void detection_led_task(void *para)
                         ws2812_buffer[i] = (CRGB){
                             .r = 100,
                             .g = 35,
-                            .b = 0
+                            .b = 70
                         };
                        ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
                         vTaskDelay(pdMS_TO_TICKS(100));

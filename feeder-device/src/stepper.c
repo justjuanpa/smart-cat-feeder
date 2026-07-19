@@ -290,6 +290,7 @@ void manual_left_stepper_task(void *para){
                 // printf("prev: %lu & curr: %lu \n", previousTime, currentTime);
                 if ((currentTime-previousTime) > 25){ //if the pir sensor interrupt went of time do uart stuff
                     while(gpio_get_level(LSTEP_PIN) == 0){
+                            led_spinLcommand("F");
                         printf("button is pressed mane forward direction\n");
                         gpio_set_level(LEFTSTEP_1_PIN, 1);
                         gpio_set_level(LEFTSTEP_2_PIN, 0);
@@ -323,6 +324,7 @@ void manual_left_stepper_task(void *para){
                 }
                 else if ((currentTime - previousTime) < 25){
                     while(gpio_get_level(LSTEP_PIN) == 0){
+                        led_spinLcommand("R");
                         printf("button is pressed mane reverse direction\n");
                         gpio_set_level(LEFTSTEP_1_PIN, 0);
                         gpio_set_level(LEFTSTEP_2_PIN, 0);
@@ -354,6 +356,8 @@ void manual_left_stepper_task(void *para){
                     gpio_set_level(LEFTSTEP_3_PIN, 0);
                     gpio_set_level(LEFTSTEP_4_PIN, 0);
                 }
+                                        led_spinLcommand("S");
+
                 manual_overide_l = false;
         } else {
             printf("semaphore fail");

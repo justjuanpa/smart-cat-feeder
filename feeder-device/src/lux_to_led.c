@@ -483,30 +483,30 @@ void detection_led_task(void *para)
 
                 ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
             }
-             } else { //in manual mode
-                if (strcmp(right_spin_mode, "F") == 0){
+             } 
+             else if (strcmp(right_spin_mode, "F") == 0){
                     for (int i = 0; i < LED_NUM_W_STR; i++) {
                         ws2812_buffer[i] = (CRGB){
                             .r = 100,
                             .g = 35,
-                            .b = 45
+                            .b = 0
                         };
                         ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
                         vTaskDelay(pdMS_TO_TICKS(100));
-                    }
-
-
-                } else if (strcmp(right_spin_mode, "R")){
+            }             
+            else if (strcmp(right_spin_mode, "R")){
                     for (int i = LED_NUM_W_STR; i > 0; i--) {
                         ws2812_buffer[i] = (CRGB){
                             .r = 100,
                             .g = 35,
-                            .b = 70
+                            .b = 0
                         };
                        ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
                         vTaskDelay(pdMS_TO_TICKS(100));
                     }
                 }
+             }
+             else { //in manual mode
 
                 //idle 
                 for (int i = 0; i < LED_NUM_W_STR; i++) {

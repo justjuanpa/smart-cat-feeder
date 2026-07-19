@@ -303,7 +303,7 @@ void detection_led_task(void *para)
          * LEFT command:
          * Blink the left-side detection LEDs green.
          */
-        if (!left_manual_mode){
+        if (!left_manual_mode || (((strcmp(left_spin_mode, "S")) == 0))){
                 if (strcmp(pi_command_l, "LEFT") == 0) {
                 if  ((currTime - last_command_l_time) < pdMS_TO_TICKS(5000)){
                     command_active_l = true;
@@ -372,7 +372,7 @@ void detection_led_task(void *para)
          * DENY command:
          * Blink both detection LED sections red.
          */
-        if (!left_manual_mode || !right_manual_mode){
+        if (!left_manual_mode || !right_manual_mode || (strcmp(left_spin_mode, "S") == 0) || (strcmp(right_spin_mode, "S") == 0) ){
              if ((strcmp(pi_command_deny, "DENY") == 0)) {
             if  ((currTime - last_command_deny_time) < pdMS_TO_TICKS(3000)){
                 command_active_l = true;
@@ -591,6 +591,30 @@ void detection_led_task(void *para)
               }
                 ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
            }
+
+           if (strcmp(left_spin_mode, "F") == 0){
+                    for (int i = LED_NUM_W_END; i < LED_NUM; i++) {
+                        ws2812_buffer[i] = (CRGB){
+                            .r = 100,
+                            .g = 75,
+                            .b = 20
+                        };
+                        ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+                        vTaskDelay(pdMS_TO_TICKS(10));
+
+                    }
+            }             
+            else if (strcmp(left_spin_mode, "R") == 0){
+                    for (int i = LED_NUM; i >= LED_NUM_W_END; i--) {
+                        ws2812_buffer[i] = (CRGB){
+                            .r = 100,
+                            .g = 75,
+                            .b = 20
+                        };
+                       ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+                        vTaskDelay(pdMS_TO_TICKS(10));
+                    }
+            }
         }
 
         // Prevent the task from running continuously with no pause.

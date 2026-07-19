@@ -74,8 +74,8 @@ char pi_command_l[256];
 char pi_command_deny[256];
 bool left_manual_mode = false;
 bool right_manual_mode = false; 
-char right_spin_mode[256];
-char left_spin_mode[256]; 
+char right_spin_mode[256] = "S";
+char left_spin_mode[256] = "S"; 
 static TickType_t last_command_r_time = 0;
 static TickType_t last_command_l_time = 0;
 static TickType_t last_command_deny_time = 0;
@@ -426,10 +426,148 @@ void detection_led_task(void *para)
          * Idle mode:
          * This runs only when none of the commands above matched.
          */
-        if (!command_active_r ) {
-             if (!right_manual_mode ){
-                    if (lux >= 120){
-                    for (int i = 0; i < LED_NUM_W_STR; i++) {
+if (!command_active_r) {
+    if (strcmp(right_spin_mode, "F") == 0) {
+        // Highest priority: forward stepper animation
+       for (int i = 0; i < LED_NUM_W_STR; i++) {
+            for (int j = 0; j < LED_NUM_W_STR; j++) {
+                ws2812_buffer[j] = (j == i)
+                    ? (CRGB){ .r = 100, .g = 35, .b = 0 }
+                    : (CRGB){ .r = 0, .g = 0, .b = 0 };
+            }
+            ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+    }
+    else if (strcmp(right_spin_mode, "R") == 0) {
+        // Highest priority: reverse stepper animation
+        // for (int i = LED_NUM_W_STR - 1; i >= 0; i--) {
+        //     ws2812_buffer[i] = (CRGB){
+        //         .r = 100,
+        //         .g = 35,
+        //         .b = 0
+        //     };
+
+        //     ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+        //     vTaskDelay(pdMS_TO_TICKS(200));
+        // }
+
+        for (int i = LED_NUM_W_STR - 1; i >= 0; i--) {
+            for (int j = LED_NUM_W_STR - 1; j >= 0; j--) {
+                ws2812_buffer[j] = (j == i)
+                    ? (CRGB){ .r = 100, .g = 35, .b = 0 }
+                    : (CRGB){ .r = 0, .g = 0, .b = 0 };
+            }
+            ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+        
+    }
+    else if (strcmp(right_spin_mode, "S") == 0){
+        if (right_manual_mode) {
+        // Lower priority: manual-mode idle LEDs
+        for (int i = 0; i < LED_NUM_W_STR; i++) {
+            ws2812_buffer[i] = (CRGB){
+                .r = 100,
+                .g = 35,
+                .b = 0
+            };
+        }
+
+        ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+        } else {
+        // Lowest priority: normal lux-controlled LEDs
+        if (lux >= 120) {
+            for (int i = 0; i < LED_NUM_W_STR; i++) {
+                ws2812_buffer[i] = (CRGB){
+                    .r = 0,
+                    .g = 0,
+                    .b = 0
+                };
+            }
+        }
+        else if (lux >= 85) {
+            for (int i = 0; i < LED_NUM_W_STR; i++) {
+                ws2812_buffer[i] = (CRGB){
+                    .r = 25,
+                    .g = 24,
+                    .b = 21
+                };
+            }
+        }
+        else if (lux >= 60) {
+            for (int i = 0; i < LED_NUM_W_STR; i++) {
+                ws2812_buffer[i] = (CRGB){
+                    .r = 50,
+                    .g = 48,
+                    .b = 40
+                };
+            }
+        }
+        else if (lux >= 35) {
+            for (int i = 0; i < LED_NUM_W_STR; i++) {
+                ws2812_buffer[i] = (CRGB){
+                    .r = 75,
+                    .g = 72,
+                    .b = 60
+                };
+            }
+        }
+        else {
+            for (int i = 0; i < LED_NUM_W_STR; i++) {
+                ws2812_buffer[i] = (CRGB){
+                    .r = 100,
+                    .g = 96,
+                    .b = 80
+                };
+            }
+        }
+
+        ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+    }
+    }
+}
+
+        if (!command_active_l){
+            if (strcmp(left_spin_mode, "F") == 0){
+                for (int i = LED_NUM_W_END; i < LED_NUM; i++) {
+                        for (int j = LED_NUM_W_END; j < LED_NUM; j++){
+                         ws2812_buffer[j] = (j == i)
+                    ? (CRGB){ .r = 100, .g = 35, .b = 0 }
+                    : (CRGB){ .r = 0, .g = 0, .b = 0 };
+                       
+                    }
+                     ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+                        vTaskDelay(pdMS_TO_TICKS(100));
+                }
+            }             
+            else if (strcmp(left_spin_mode, "R") == 0){
+                    for (int i =  LED_NUM - 1; i >= LED_NUM_W_END; i--) {
+                        for (int j =  LED_NUM - 1; j >= LED_NUM_W_END; j--){
+                            ws2812_buffer[j] = (j == i)
+                        ? (CRGB){ .r = 100, .g = 35, .b = 0 }
+                        : (CRGB){ .r = 0, .g = 0, .b = 0 };
+                        
+                    }
+                    ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+                        vTaskDelay(pdMS_TO_TICKS(100));
+                     }
+            }
+
+            else if (strcmp(left_spin_mode, "S") == 0){
+                if (left_manual_mode){
+                    for (int i = LED_NUM_W_END; i < LED_NUM; i++) {
+                        ws2812_buffer[i] = (CRGB){
+                            .r = 100,
+                            .g = 35,
+                            .b = 0
+                        };
+                } 
+                        ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+
+            }else {
+                if (lux >= 120){
+                    for (int i = LED_NUM_W_END; i < LED_NUM; i++) {
                         ws2812_buffer[i] = (CRGB){
                             .r = 0,
                             .g = 0,
@@ -437,194 +575,57 @@ void detection_led_task(void *para)
                         };
                     }
 
-                    ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
-            }
-            else if (lux <= 120 && lux >= 85){
-            for (int i = 0; i < LED_NUM_W_STR; i++) {
-                    ws2812_buffer[i] = (CRGB){
-                        .r = 25,
-                        .g = 24,
-                        .b = 21
-                    };
-                }
-
-                ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
-            }
-            else if (lux <= 85 && lux >= 60){
-                for (int i = 0; i < LED_NUM_W_STR; i++) {
-                    ws2812_buffer[i] = (CRGB){
-                        .r = 50,
-                        .g = 48,
-                        .b = 40
-                    };
-                }
-
-                ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
-            }
-            else if (lux <= 60 && lux >= 35){
-                for (int i = 0; i < LED_NUM_W_STR; i++) {
-                    ws2812_buffer[i] = (CRGB){
-                        .r = 75,
-                        .g = 72,
-                        .b = 60
-                    };
-                }
-
-                ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
-            }
-            else if (lux <= 35 && lux >= 0){
-            for (int i = 0; i < LED_NUM_W_STR; i++) {
-                    ws2812_buffer[i] = (CRGB){
-                        .r = 100,
-                        .g = 96,
-                        .b = 80
-                    };
-                }
-
-                ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
-            }
-             } else { //in manual mode
-
-                //idle 
-                for (int i = 0; i < LED_NUM_W_STR; i++) {
-                    ws2812_buffer[i] = (CRGB){
-                        .r = 100,
-                        .g = 35,
-                        .b = 0
-                    };
-                }
-
-                ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
-
-             }
-
-             if (strcmp(right_spin_mode, "F") == 0){
-                    for (int i = 0; i < LED_NUM_W_STR; i++) {
-                        ws2812_buffer[i] = (CRGB){
-                            .r = 100,
-                            .g = 35,
-                            .b = 0
-                        };
-                        ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
-                        vTaskDelay(pdMS_TO_TICKS(100));
+                     }
+                    else if (lux >= 85){
+                    for (int i = LED_NUM_W_END; i < LED_NUM; i++) {
+                            ws2812_buffer[i] = (CRGB){
+                                .r = 25,
+                                .g = 24,
+                                .b = 20
+                            };
+                        }
 
                     }
-            }             
-            else if (strcmp(right_spin_mode, "R") == 0){
-                    for (int i = LED_NUM_W_STR; i > 0; i--) {
-                        ws2812_buffer[i] = (CRGB){
-                            .r = 100,
-                            .g = 35,
-                            .b = 0
-                        };
-                       ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
-                        vTaskDelay(pdMS_TO_TICKS(10));
+                    else if (lux >= 60){
+                        for (int i = LED_NUM_W_END; i < LED_NUM; i++){
+                            ws2812_buffer[i] = (CRGB){
+                                .r = 50,
+                                .g = 48,
+                                .b = 40
+                            };
+                        }
+
                     }
+                    else if (lux >= 35){
+                        for (int i = LED_NUM_W_END; i < LED_NUM; i++){
+                            ws2812_buffer[i] = (CRGB){
+                                .r = 75,
+                                .g = 72,
+                                .b = 60
+                            };
+                        }
+
+                    }
+                    else {
+                    for (int i = LED_NUM_W_END; i < LED_NUM; i++) {
+                            ws2812_buffer[i] = (CRGB){
+                                .r = 100,
+                                .g = 96,
+                                .b = 80
+                            };
+                    }
+
+                    }
+                            ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
+
+                        }
             }
-            
+        
         }
 
-        if (!command_active_l){
-           if (!left_manual_mode){
-             if (lux >= 120){
-                for (int i = LED_NUM_W_END; i < LED_NUM; i++) {
-                    ws2812_buffer[i] = (CRGB){
-                        .r = 0,
-                        .g = 0,
-                        .b = 0
-                    };
-                }
-
-                ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
-            }
-            else if (lux <= 120 && lux >= 85){
-            for (int i = LED_NUM_W_END; i < LED_NUM; i++) {
-                    ws2812_buffer[i] = (CRGB){
-                        .r = 25,
-                        .g = 24,
-                        .b = 20
-                    };
-                }
-
-                ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
-            }
-            else if (lux <= 85 && lux >= 60){
-                for (int i = LED_NUM_W_END; i < LED_NUM; i++){
-                    ws2812_buffer[i] = (CRGB){
-                        .r = 50,
-                        .g = 48,
-                        .b = 40
-                    };
-                }
-
-                ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
-            }
-            else if (lux <= 60 && lux >= 35){
-                for (int i = LED_NUM_W_END; i < LED_NUM; i++){
-                    ws2812_buffer[i] = (CRGB){
-                        .r = 75,
-                        .g = 72,
-                        .b = 60
-                    };
-                }
-
-                ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
-            }
-            else if (lux <= 35 && lux >= 0){
-            for (int i = LED_NUM_W_END; i < LED_NUM; i++) {
-                    ws2812_buffer[i] = (CRGB){
-                        .r = 100,
-                        .g = 96,
-                        .b = 80
-                    };
-            }
-
-                ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
-            }
-           } 
-           
-        else {
-        // Manual-mode direction animation
-
-        if (strcmp(left_spin_mode, "F") == 0) {
-            for (int i = LED_NUM_W_END; i < LED_NUM; i++) {
-                ws2812_buffer[i] = (CRGB){
-                    .r = 100,
-                    .g = 75,
-                    .b = 20
-                };
-
-                ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
-                vTaskDelay(pdMS_TO_TICKS(100));
-            }
-        }
-            else if (strcmp(left_spin_mode, "R") == 0) {
-                for (int i = LED_NUM - 1; i >= LED_NUM_W_END; i--) {
-                    ws2812_buffer[i] = (CRGB){
-                        .r = 100,
-                        .g = 75,
-                        .b = 20
-                    };
-
-                    ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
-                    vTaskDelay(pdMS_TO_TICKS(100));
-                }
-            }
-            else {
-                // Manual mode, but stopped
-                for (int i = LED_NUM_W_END; i < LED_NUM; i++) {
-                    ws2812_buffer[i] = (CRGB){
-                        .r = 100,
-                        .g = 35,
-                        .b = 0
-                    };
-                }
-
-                ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
-            }
-        }
-    }
-
+        
+        
+    
         // Prevent the task from running continuously with no pause.
         vTaskDelay(pdMS_TO_TICKS(100));
     }

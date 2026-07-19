@@ -82,8 +82,9 @@ static void process_pi_command(char *command)
     }
 
     if (strcmp(command, "DENY") == 0){
-        led_receive_command_r(command);
-        led_receive_command_l(command);
+        // led_receive_command_r(command);
+        // led_receive_command_l(command);
+        led_receive_command_deny(command);
 
         printf("Vision denied access; not starting a dispense cycle\n");
     }

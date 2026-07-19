@@ -7,14 +7,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { usePawsRealtime } from '@/hooks/use-paws-realtime';
 import { useSupabaseSession } from '@/hooks/use-supabase-session';
 import {
-  fetchFeedingEvents,
+  fetchActivityFeedingEvents,
   fetchPets,
   type FeedingEventRow,
   type PetRow,
 } from '@/utils/paws-data';
 import { formatGrams, formatTime } from '@/utils/formatters';
 
-const ACTIVITY_FETCH_LIMIT = 50;
 const ACTIVITY_VISIBLE_LIMIT = 20;
 
 export default function ActivityScreen() {
@@ -31,7 +30,7 @@ export default function ActivityScreen() {
 
     try {
       const [nextEvents, nextPets] = await Promise.all([
-        fetchFeedingEvents(ACTIVITY_FETCH_LIMIT),
+        fetchActivityFeedingEvents(ACTIVITY_VISIBLE_LIMIT),
         fetchPets(),
       ]);
       setEvents(nextEvents);

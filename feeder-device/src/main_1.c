@@ -57,13 +57,19 @@ static void process_pi_command(char *command)
     printf("Recieved: %s\n", command);
     if (strcmp(command, "RIGHT") == 0 || strcmp(command, "ALLOW") == 0 || strcmp(command, "OPEN") == 0){ //if the raspberry pi says to open the right side
         vTaskDelay(pdMS_TO_TICKS(50));
-        printf("Starting right dispense cycle\n");
-        load_cell_enable_right(true);
+        printf("Opening right lid for recognized pet; scheduled meals handle dispensing\n");
+        load_cell_enable_right(false);
+        servoEnableRight(true);
+        uart_comm_send_string("OPENED_RIGHT\r\n");
+        return;
     }
 
     if (strcmp(command, "LEFT") == 0){ //if the raspberry pi says to open the left side
-        printf("Starting left dispense cycle\n");
-        load_cell_enable_left(true);
+        printf("Opening left lid for recognized pet; scheduled meals handle dispensing\n");
+        load_cell_enable_left(false);
+        servoEnableLeft(true);
+        uart_comm_send_string("OPENED_LEFT\r\n");
+        return;
     }
 
     if (strcmp(command, "DENY") == 0){

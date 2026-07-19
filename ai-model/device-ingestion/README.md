@@ -68,9 +68,9 @@ Cloud writes performed by `uart_pet_gate.py`:
 - startup heartbeat: marks the device reachable
 - `PIR TRIGGERED` received: updates motion/status
 - no allowed pet detected: writes a `denied` feeding event
-- allowed pet detected: writes an `authorized` feeding event
-- `OPENED_LEFT` / `OPENED_RIGHT` received: writes a `dispensed` event and
-  starts open-lid presence checks
+- allowed pet detected: writes an `authorized` feeding event and requests the
+  matching access lid
+- `OPENED_LEFT` / `OPENED_RIGHT` received: starts open-lid presence checks
 - `DISPENSED_LEFT` / `DISPENSED_RIGHT` received, with an optional final
   weight like `DISPENSED_RIGHT 21`: writes a scheduled `dispensed` event
   without marking the access lid open

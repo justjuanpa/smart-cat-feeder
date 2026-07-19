@@ -14,6 +14,9 @@ import {
 } from '@/utils/paws-data';
 import { formatGrams, formatTime } from '@/utils/formatters';
 
+const ACTIVITY_FETCH_LIMIT = 50;
+const ACTIVITY_VISIBLE_LIMIT = 20;
+
 export default function ActivityScreen() {
   const { session } = useSupabaseSession();
   const [events, setEvents] = useState<FeedingEventRow[]>([]);
@@ -27,7 +30,10 @@ export default function ActivityScreen() {
     setError(null);
 
     try {
-      const [nextEvents, nextPets] = await Promise.all([fetchFeedingEvents(), fetchPets()]);
+      const [nextEvents, nextPets] = await Promise.all([
+        fetchFeedingEvents(ACTIVITY_FETCH_LIMIT),
+        fetchPets(),
+      ]);
       setEvents(nextEvents);
       setPets(nextPets);
       setFailedAvatarIds(new Set());
@@ -48,6 +54,8 @@ export default function ActivityScreen() {
     userId: session?.user.id,
     onActivityChange: loadActivity,
   });
+
+  const visibleEvents = collapseUnknownEvents(events, pets);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -71,12 +79,12 @@ export default function ActivityScreen() {
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Recent events</Text>
-          {events.length === 0 ? (
+          {visibleEvents.length === 0 ? (
             <Text style={styles.muted}>
               {loading ? 'Loading activity...' : 'No events yet. The Pi will add allow/deny events here.'}
             </Text>
           ) : (
-            events.map((event) => {
+            visibleEvents.map((event) => {
               const pet = petForEvent(event, pets);
 
               return (
@@ -114,6 +122,25 @@ export default function ActivityScreen() {
       </ScrollView>
     </SafeAreaView>
   );
+}
+
+function collapseUnknownEvents(events: FeedingEventRow[], pets: PetRow[]) {
+  const latestUnknownEvent = events.find((event) => isUnknownCvEvent(event, pets)) ?? null;
+  const petEvents = events.filter((event) => !isUnknownCvEvent(event, pets));
+  const collapsedEvents = latestUnknownEvent ? [latestUnknownEvent, ...petEvents] : petEvents;
+
+  return collapsedEvents
+    .sort((first, second) => new Date(second.occurred_at).getTime() - new Date(first.occurred_at).getTime())
+    .slice(0, ACTIVITY_VISIBLE_LIMIT);
+}
+
+function isUnknownCvEvent(event: FeedingEventRow, pets: PetRow[]) {
+  if (petForEvent(event, pets)) {
+    return false;
+  }
+
+  const label = event.recognition_label?.trim().toLowerCase();
+  return event.event_type === 'denied' || label === 'unknown' || label == null;
 }
 
 function PetAvatar({

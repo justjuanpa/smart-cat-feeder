@@ -308,14 +308,14 @@ export async function deleteSchedule(scheduleId: string) {
   }
 }
 
-export async function fetchFeedingEvents() {
+export async function fetchFeedingEvents(limit = 10) {
   const { data, error } = await supabase
     .from('feeding_events')
     .select(
       'id, pet_id, event_type, occurred_at, authorized, amount_grams, recognition_label, recognition_confidence, notes, raw_payload, pets(name)',
     )
     .order('occurred_at', { ascending: false })
-    .limit(10);
+    .limit(limit);
 
   if (error) {
     throw error;

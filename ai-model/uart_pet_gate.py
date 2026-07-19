@@ -847,34 +847,23 @@ def mark_bowl_open(bowl_state, side, args):
     state["close_sent_at"] = None
     print(f"{side} bowl is open; next presence check in {args.presence_check_interval}s")
 
-    queue_cloud_report(
-        args,
-        {
-            "event_type": "dispensed",
-            "authorized": True,
-            "recognition_label": (
-                scheduled_context.get("pet_name")
-                if scheduled_context is not None
-                else SIDE_PETS[side]
-            ),
-            "amount_grams": (
-                scheduled_context.get("grams_needed")
-                if scheduled_context is not None
-                else state.get("latest_weight_grams")
-            ),
-            "notes": (
-                f"Scheduled meal {scheduled_context.get('meal_name')} opened {side} bowl"
-                if scheduled_context is not None
-                else f"{side} bowl opened after dispense target"
-            ),
-            "raw_payload": {
-                "side": side,
-                "message": f"OPENED_{side}",
-                "latest_weight_grams": state.get("latest_weight_grams"),
-                "scheduled_context": scheduled_context,
+    if scheduled_context is not None:
+        queue_cloud_report(
+            args,
+            {
+                "event_type": "dispensed",
+                "authorized": True,
+                "recognition_label": scheduled_context.get("pet_name"),
+                "amount_grams": scheduled_context.get("grams_needed"),
+                "notes": f"Scheduled meal {scheduled_context.get('meal_name')} opened {side} bowl",
+                "raw_payload": {
+                    "side": side,
+                    "message": f"OPENED_{side}",
+                    "latest_weight_grams": state.get("latest_weight_grams"),
+                    "scheduled_context": scheduled_context,
+                },
             },
-        },
-    )
+        )
     state["scheduled_context"] = None
 
 
@@ -1183,7 +1172,7 @@ def handle_trigger(
             "event_type": "authorized",
             "authorized": True,
             "recognition_label": pet_name,
-            "notes": f"Camera authorized {pet_name}; sent {command}",
+            "notes": f"Camera authorized {pet_name}; requested {command} lid",
         },
     )
 

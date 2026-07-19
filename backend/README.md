@@ -126,11 +126,11 @@ Real scheduled dispensing is opt-in on the Pi:
 python ai-model/uart_pet_gate.py --enable-scheduled-dispense
 ```
 
-Scheduled `FEED_LEFT` / `FEED_RIGHT` commands only dispense to the target bowl
+Scheduled `FEED_LEFT` / `FEED_RIGHT` commands dispense to the target bowl
 weight. The ESP32 replies with `DISPENSED_LEFT` / `DISPENSED_RIGHT` and leaves
-the access lid closed. The older CV-triggered `LEFT` / `RIGHT` commands still
-open the matching access lid after dispensing and reply with `OPENED_LEFT` /
-`OPENED_RIGHT`.
+the access lid closed. CV-triggered `LEFT` / `RIGHT` commands only open the
+matching access lid and reply with `OPENED_LEFT` / `OPENED_RIGHT`; scheduled
+meals are the only path that dispenses food.
 
 ## Local Files
 

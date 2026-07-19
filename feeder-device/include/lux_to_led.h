@@ -11,6 +11,8 @@ void PirLedDoor(bool val);
 void led_receive_command_l(char *command);
 void led_receive_command_r(char *command);
 void led_receive_command_deny(char *command);
+void led_receieve_manual_right (bool led);
+void led_receieve_manual_left (bool led);
 
 int ledStats(void);
 

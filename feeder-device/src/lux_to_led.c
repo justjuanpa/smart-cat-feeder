@@ -596,7 +596,7 @@ void detection_led_task(void *para)
                     for (int i = LED_NUM_W_END; i < LED_NUM; i++) {
                         ws2812_buffer[i] = (CRGB){
                             .r = 100,
-                            .g = 75,
+                            .g = 0,
                             .b = 20
                         };
                         ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());
@@ -608,7 +608,7 @@ void detection_led_task(void *para)
                     for (int i = LED_NUM - 1;  i >= LED_NUM_W_END; i--) {
                         ws2812_buffer[i] = (CRGB){
                             .r = 100,
-                            .g = 75,
+                            .g = 0,
                             .b = 20
                         };
                        ESP_ERROR_CHECK_WITHOUT_ABORT(ws28xx_update());

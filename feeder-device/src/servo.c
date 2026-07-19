@@ -8,7 +8,7 @@
 #include "jay_hx711.h"
 #include "uart_comm.h"
 #include "freertos/semphr.h"
-
+#include "lux_to_led.h"
 
 #define RightServoPin GPIO_NUM_18
 #define LeftServoPin GPIO_NUM_17
@@ -208,6 +208,7 @@ static void moveRIGHTservoTo(uint16_t target_angle)
 void manual_right_servo_task(void *para){
     bool manual_right_servo_lid = rightServoStatus();
     bool stored_right_position = rightServoStatus();
+    
 
 
     TickType_t last_accepted_click_r = 0;
@@ -245,7 +246,6 @@ void manual_right_servo_task(void *para){
             manual_right_servo_lid = stored_right_position;
             manual_overide_servo_r = true;
             printf("Entering manual mode\n");
-
             if (manual_right_servo_lid) {
                 printf("Button pressed: closing lid\n");
                 moveRIGHTservoTo(90);  // closed
@@ -255,6 +255,8 @@ void manual_right_servo_task(void *para){
                 printf("Button pressed: opening lid\n");
                 moveRIGHTservoTo(0);   // open
                 manual_right_servo_lid = true;
+                
+
             }
         } else {
             printf("Returning to automatic mode\n");
@@ -271,6 +273,7 @@ void manual_right_servo_task(void *para){
         }
 
         //Remove any remaining bounce events.
+        led_receieve_manual_right(manual_overide_servo_r)
         while (xSemaphoreTake(xBTNRSem, 0) == pdTRUE) {}
     }
 }

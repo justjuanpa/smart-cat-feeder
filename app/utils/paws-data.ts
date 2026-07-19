@@ -52,7 +52,22 @@ export type FeedingEventRow = {
   recognition_label: string | null;
   recognition_confidence: number | null;
   notes: string | null;
+  raw_payload?: Record<string, unknown> | null;
   pets?: Pick<PetRow, 'name'> | null;
+};
+
+export type ScheduleRunRow = {
+  id: string;
+  schedule_id: string | null;
+  pet_id: string | null;
+  scheduled_for: string;
+  status: 'claimed' | 'skipped' | 'command_sent' | 'dispensed' | 'failed';
+  target_grams: number;
+  starting_bowl_weight_grams: number | null;
+  grams_needed: number | null;
+  side: 'LEFT' | 'RIGHT' | null;
+  notes: string | null;
+  updated_at: string;
 };
 
 export type DeviceStatusRow = {
@@ -297,7 +312,7 @@ export async function fetchFeedingEvents() {
   const { data, error } = await supabase
     .from('feeding_events')
     .select(
-      'id, pet_id, event_type, occurred_at, authorized, amount_grams, recognition_label, recognition_confidence, notes, pets(name)',
+      'id, pet_id, event_type, occurred_at, authorized, amount_grams, recognition_label, recognition_confidence, notes, raw_payload, pets(name)',
     )
     .order('occurred_at', { ascending: false })
     .limit(10);
@@ -310,6 +325,51 @@ export async function fetchFeedingEvents() {
     ...event,
     pets: normalizeRelatedPet(event.pets),
   })) as FeedingEventRow[];
+}
+
+export async function fetchTodayScheduleRuns() {
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+
+  const { data, error } = await supabase
+    .from('schedule_runs')
+    .select(
+      'id, schedule_id, pet_id, scheduled_for, status, target_grams, starting_bowl_weight_grams, grams_needed, side, notes, updated_at',
+    )
+    .gte('scheduled_for', startOfDay.toISOString())
+    .order('scheduled_for', { ascending: false });
+
+  if (error) {
+    throw error;
+  }
+
+  return (data ?? []) as ScheduleRunRow[];
+}
+
+export async function fetchLatestScheduledDispense() {
+  const { data, error } = await supabase
+    .from('feeding_events')
+    .select(
+      'id, pet_id, event_type, occurred_at, authorized, amount_grams, recognition_label, recognition_confidence, notes, raw_payload, pets(name)',
+    )
+    .eq('event_type', 'dispensed')
+    .filter('raw_payload->>access_lid_opened', 'eq', 'false')
+    .order('occurred_at', { ascending: false })
+    .limit(1);
+
+  if (error) {
+    throw error;
+  }
+
+  const event = data?.[0];
+  if (!event) {
+    return null;
+  }
+
+  return {
+    ...event,
+    pets: normalizeRelatedPet(event.pets),
+  } as FeedingEventRow;
 }
 
 export async function fetchLatestDeviceStatus() {

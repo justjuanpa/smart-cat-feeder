@@ -5,13 +5,20 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { usePawsRealtime } from '@/hooks/use-paws-realtime';
 import { useSupabaseSession } from '@/hooks/use-supabase-session';
-import { fetchLatestDeviceStatus, type DeviceStatusRow } from '@/utils/paws-data';
+import {
+  fetchLatestDeviceStatus,
+  fetchLatestScheduledDispense,
+  type DeviceStatusRow,
+  type FeedingEventRow,
+} from '@/utils/paws-data';
 import { supabase } from '@/utils/supabase';
-import { formatGrams, formatRelativeTime } from '@/utils/formatters';
+import { formatGrams, formatRelativeTime, formatTime } from '@/utils/formatters';
 
 export default function DeviceScreen() {
   const { session } = useSupabaseSession();
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatusRow | null>(null);
+  const [latestScheduledDispense, setLatestScheduledDispense] =
+    useState<FeedingEventRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -20,7 +27,12 @@ export default function DeviceScreen() {
     setError(null);
 
     try {
-      setDeviceStatus(await fetchLatestDeviceStatus());
+      const [nextStatus, nextScheduledDispense] = await Promise.all([
+        fetchLatestDeviceStatus(),
+        fetchLatestScheduledDispense(),
+      ]);
+      setDeviceStatus(nextStatus);
+      setLatestScheduledDispense(nextScheduledDispense);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load device status.');
     } finally {
@@ -85,11 +97,33 @@ export default function DeviceScreen() {
         </View>
 
         <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Last scheduled dispense</Text>
+          {latestScheduledDispense ? (
+            <View style={styles.lastDispenseRow}>
+              <View style={styles.statusIcon}>
+                <MaterialIcons name="restaurant" size={18} color="#1D4FA3" />
+              </View>
+              <View style={styles.rowText}>
+                <Text style={styles.cardTitle}>
+                  {latestScheduledDispense.pets?.name ??
+                    latestScheduledDispense.recognition_label ??
+                    'Pet'}{' '}
+                  at {formatTime(latestScheduledDispense.occurred_at)}
+                </Text>
+                <Text style={styles.muted}>{scheduledDispenseSummary(latestScheduledDispense)}</Text>
+              </View>
+            </View>
+          ) : (
+            <Text style={styles.muted}>No scheduled dispense has been reported yet.</Text>
+          )}
+        </View>
+
+        <View style={styles.card}>
           <Text style={styles.sectionTitle}>System readiness</Text>
           <SetupRow done title="Supabase schema" detail="Tables and RLS are live" />
           <SetupRow done title="Mobile app backend" detail="Auth, profiles, events, and status connected" />
           <SetupRow done={online} title="Raspberry Pi bridge" detail={online ? 'Heartbeat received' : 'Waiting for Pi'} />
-          <SetupRow done={false} title="Motors and sensors" detail="Add dispensed/consumed events after hardware tests" />
+          <SetupRow done={Boolean(latestScheduledDispense)} title="Motors and sensors" detail={latestScheduledDispense ? 'Scheduled dispense confirmed' : 'Waiting for scheduled dispense'} />
         </View>
 
         <Pressable onPress={signOut} style={styles.secondaryButton}>
@@ -114,6 +148,42 @@ function Metric({ label, value }: { label: string; value: string }) {
 
 function formatBowlGrams(value: number | null) {
   return value == null ? '--' : formatGrams(value);
+}
+
+function scheduledDispenseSummary(event: FeedingEventRow) {
+  const payload = event.raw_payload ?? {};
+  const context = payload.scheduled_context;
+  const mealName =
+    isRecord(context) && typeof context.meal_name === 'string'
+      ? context.meal_name
+      : 'Scheduled meal';
+  const side = typeof payload.side === 'string' ? payload.side : null;
+  const finalWeight = numberFromUnknown(payload.final_weight_grams ?? payload.latest_weight_grams);
+  const amount = event.amount_grams == null ? null : formatGrams(event.amount_grams);
+  const parts = [
+    amount ? `${mealName} added ${amount}` : mealName,
+    side ? `${side} bowl` : null,
+    finalWeight != null ? `now ${formatGrams(finalWeight)}` : null,
+  ].filter(Boolean);
+
+  return parts.join(' · ');
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function numberFromUnknown(value: unknown) {
+  if (typeof value === 'number') {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
 }
 
 function SetupRow({ title, detail, done }: { title: string; detail: string; done: boolean }) {
@@ -237,8 +307,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
   },
+  lastDispenseRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+  },
   statusIcon: {
     alignItems: 'center',
+    backgroundColor: '#EEF4FF',
     borderRadius: 8,
     height: 36,
     justifyContent: 'center',

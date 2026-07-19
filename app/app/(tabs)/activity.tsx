@@ -1,25 +1,20 @@
 import { MaterialIcons } from '@expo/vector-icons';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { usePawsRealtime } from '@/hooks/use-paws-realtime';
 import { useSupabaseSession } from '@/hooks/use-supabase-session';
 import {
   fetchFeedingEvents,
-  fetchPets,
-  logManualFeedingEvent,
   type FeedingEventRow,
-  type PetRow,
 } from '@/utils/paws-data';
 import { formatGrams, formatTime } from '@/utils/formatters';
 
 export default function ActivityScreen() {
   const { session } = useSupabaseSession();
   const [events, setEvents] = useState<FeedingEventRow[]>([]);
-  const [pets, setPets] = useState<PetRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadActivity = useCallback(async () => {
@@ -27,9 +22,8 @@ export default function ActivityScreen() {
     setError(null);
 
     try {
-      const [nextEvents, nextPets] = await Promise.all([fetchFeedingEvents(), fetchPets()]);
+      const nextEvents = await fetchFeedingEvents();
       setEvents(nextEvents);
-      setPets(nextPets);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load activity.');
     } finally {
@@ -47,27 +41,6 @@ export default function ActivityScreen() {
     userId: session?.user.id,
     onActivityChange: loadActivity,
   });
-
-  async function logDemoEvent() {
-    if (!session?.user || pets.length === 0) {
-      Alert.alert('No pet yet', 'Create pet profiles from the Pets tab first.');
-      return;
-    }
-
-    setSaving(true);
-
-    try {
-      await logManualFeedingEvent(session.user.id, pets[0]);
-      await loadActivity();
-    } catch (eventError) {
-      Alert.alert(
-        'Could not log event',
-        eventError instanceof Error ? eventError.message : 'Try again in a moment.',
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -89,14 +62,6 @@ export default function ActivityScreen() {
           </View>
         ) : null}
 
-        <Pressable
-          disabled={saving}
-          onPress={logDemoEvent}
-          style={[styles.primaryButton, saving && styles.disabledButton]}>
-          <MaterialIcons name="add-circle" size={22} color="#FFFFFF" />
-          <Text style={styles.primaryButtonText}>{saving ? 'Logging...' : 'Log demo feeding event'}</Text>
-        </Pressable>
-
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Recent events</Text>
           {events.length === 0 ? (
@@ -112,6 +77,9 @@ export default function ActivityScreen() {
                 <View style={styles.rowText}>
                   <Text style={styles.cardTitle}>{event.pets?.name ?? event.recognition_label ?? 'Unknown pet'}</Text>
                   <Text style={styles.muted}>{eventSummary(event)}</Text>
+                  {scheduledDispenseDetail(event) ? (
+                    <Text style={styles.small}>{scheduledDispenseDetail(event)}</Text>
+                  ) : null}
                 </View>
                 <View style={styles.eventMeta}>
                   <Text style={styles.small}>{formatTime(event.occurred_at)}</Text>
@@ -143,6 +111,18 @@ function eventIcon(type: string): keyof typeof MaterialIcons.glyphMap {
 }
 
 function eventSummary(event: FeedingEventRow) {
+  if (isScheduledDispense(event)) {
+    const payload = event.raw_payload ?? {};
+    const context = payload.scheduled_context;
+    const mealName =
+      isRecord(context) && typeof context.meal_name === 'string'
+        ? context.meal_name
+        : 'Scheduled meal';
+    const side = typeof payload.side === 'string' ? payload.side.toLowerCase() : 'bowl';
+
+    return `${mealName} added ${formatEventAmount(event)} to the ${side} bowl.`;
+  }
+
   if (event.notes) {
     return event.notes;
   }
@@ -158,12 +138,62 @@ function eventSummary(event: FeedingEventRow) {
   return `${event.event_type} event${event.authorized === false ? ': access denied' : ''}.`;
 }
 
+function scheduledDispenseDetail(event: FeedingEventRow) {
+  if (!isScheduledDispense(event)) {
+    return null;
+  }
+
+  const payload = event.raw_payload ?? {};
+  const finalWeight = numberFromUnknown(payload.final_weight_grams ?? payload.latest_weight_grams);
+  const context = payload.scheduled_context;
+  const target =
+    isRecord(context) ? numberFromUnknown(context.target_grams) : null;
+
+  if (finalWeight == null && target == null) {
+    return null;
+  }
+
+  const parts = [];
+  if (finalWeight != null) {
+    parts.push(`Bowl now ${formatGrams(finalWeight)}`);
+  }
+  if (target != null) {
+    parts.push(`target ${formatGrams(target)}`);
+  }
+
+  return parts.join(' · ');
+}
+
 function formatEventAmount(event: FeedingEventRow) {
   if (event.amount_grams == null) {
     return '--';
   }
 
   return formatGrams(event.amount_grams);
+}
+
+function isScheduledDispense(event: FeedingEventRow) {
+  return (
+    event.event_type === 'dispensed' &&
+    event.raw_payload?.access_lid_opened === false
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function numberFromUnknown(value: unknown) {
+  if (typeof value === 'number') {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
 }
 
 const styles = StyleSheet.create({
@@ -201,23 +231,6 @@ const styles = StyleSheet.create({
     height: 48,
     justifyContent: 'center',
     width: 48,
-  },
-  primaryButton: {
-    alignItems: 'center',
-    backgroundColor: '#1D4FA3',
-    borderRadius: 8,
-    flexDirection: 'row',
-    gap: 8,
-    justifyContent: 'center',
-    padding: 16,
-  },
-  primaryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  disabledButton: {
-    opacity: 0.7,
   },
   card: {
     backgroundColor: '#FFFFFF',

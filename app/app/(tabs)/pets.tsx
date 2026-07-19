@@ -19,8 +19,10 @@ import {
   ensureProfile,
   fetchPets,
   fetchSchedules,
+  fetchTodayScheduleRuns,
   type FeedingScheduleRow,
   type PetRow,
+  type ScheduleRunRow,
 } from "@/utils/paws-data";
 import { formatGrams, formatScheduleTime } from "@/utils/formatters";
 
@@ -30,6 +32,7 @@ export default function PetsScreen() {
   const { session } = useSupabaseSession();
   const [pets, setPets] = useState<PetRow[]>([]);
   const [schedules, setSchedules] = useState<FeedingScheduleRow[]>([]);
+  const [scheduleRuns, setScheduleRuns] = useState<ScheduleRunRow[]>([]);
   const [failedAvatarIds, setFailedAvatarIds] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(true);
   const [savingDemo, setSavingDemo] = useState(false);
@@ -40,12 +43,14 @@ export default function PetsScreen() {
     setError(null);
 
     try {
-      const [nextPets, nextSchedules] = await Promise.all([
+      const [nextPets, nextSchedules, nextScheduleRuns] = await Promise.all([
         fetchPets(),
         fetchSchedules(),
+        fetchTodayScheduleRuns(),
       ]);
       setPets(nextPets);
       setSchedules(nextSchedules);
+      setScheduleRuns(nextScheduleRuns);
       setFailedAvatarIds(new Set());
     } catch (loadError) {
       setError(
@@ -230,6 +235,10 @@ export default function PetsScreen() {
                   </Text>
                 </View>
                 <View style={styles.scheduleMeta}>
+                  <ScheduleStatusBadge
+                    meal={meal}
+                    latestRun={latestRunForSchedule(scheduleRuns, meal.id)}
+                  />
                   <Text
                     style={[
                       styles.statusText,
@@ -251,6 +260,91 @@ export default function PetsScreen() {
       </ScrollView>
     </SafeAreaView>
   );
+}
+
+function latestRunForSchedule(runs: ScheduleRunRow[], scheduleId: string) {
+  return runs.find((run) => run.schedule_id === scheduleId) ?? null;
+}
+
+function ScheduleStatusBadge({
+  meal,
+  latestRun,
+}: {
+  meal: FeedingScheduleRow;
+  latestRun: ScheduleRunRow | null;
+}) {
+  const status = scheduleStatus(meal, latestRun);
+
+  return (
+    <View style={[styles.scheduleBadge, { backgroundColor: status.backgroundColor }]}>
+      <Text style={[styles.scheduleBadgeText, { color: status.color }]}>{status.label}</Text>
+    </View>
+  );
+}
+
+function scheduleStatus(meal: FeedingScheduleRow, latestRun: ScheduleRunRow | null) {
+  if (!meal.enabled) {
+    return {
+      label: "Paused",
+      color: "#92400E",
+      backgroundColor: "#FEF3C7",
+    };
+  }
+
+  if (latestRun?.status === "dispensed") {
+    return {
+      label: "Dispensed today",
+      color: "#166534",
+      backgroundColor: "#DCFCE7",
+    };
+  }
+
+  if (latestRun?.status === "skipped") {
+    return {
+      label: "Skipped today",
+      color: "#92400E",
+      backgroundColor: "#FEF3C7",
+    };
+  }
+
+  if (latestRun?.status === "claimed" || latestRun?.status === "command_sent") {
+    return {
+      label: "Waiting for device",
+      color: "#1D4FA3",
+      backgroundColor: "#EEF4FF",
+    };
+  }
+
+  if (latestRun?.status === "failed") {
+    return {
+      label: "Needs attention",
+      color: "#991B1B",
+      backgroundColor: "#FEE2E2",
+    };
+  }
+
+  const scheduledDate = scheduleDateForToday(meal.scheduled_time);
+  if (scheduledDate.getTime() > Date.now()) {
+    return {
+      label: "Upcoming",
+      color: "#1D4FA3",
+      backgroundColor: "#EEF4FF",
+    };
+  }
+
+  return {
+    label: "Waiting for device",
+    color: "#64748B",
+    backgroundColor: "#F1F5F9",
+  };
+}
+
+function scheduleDateForToday(value: string) {
+  const [hours, minutes] = value.split(":");
+  const date = new Date();
+  date.setHours(Number(hours), Number(minutes), 0, 0);
+
+  return date;
 }
 
 const styles = StyleSheet.create({
@@ -358,8 +452,7 @@ const styles = StyleSheet.create({
   },
   scheduleMeta: {
     alignItems: "flex-end",
-    flexDirection: "row",
-    gap: 4,
+    gap: 6,
   },
   scheduleRow: {
     alignItems: "center",
@@ -418,6 +511,15 @@ const styles = StyleSheet.create({
   },
   statusText: {
     fontSize: 12,
+    fontWeight: "900",
+  },
+  scheduleBadge: {
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  scheduleBadgeText: {
+    fontSize: 11,
     fontWeight: "900",
   },
   enabledText: {

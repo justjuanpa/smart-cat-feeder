@@ -86,6 +86,7 @@ class CloudReporter:
         self.stop_requested = threading.Event()
         self.dropped_telemetry = 0
         self.dropped_events = 0
+        self.queue_lock = threading.Lock()
 
     def start(self):
         if not self.enabled:
@@ -104,11 +105,22 @@ class CloudReporter:
         if not self.enabled:
             return
 
-        try:
-            self.queue.put_nowait((payload, low_priority))
-            return
-        except queue.Full:
-            pass
+        with self.queue_lock:
+            dropped_stale = self._drop_queued_low_priority()
+            if dropped_stale:
+                self.dropped_telemetry += dropped_stale
+                if self.dropped_telemetry == dropped_stale or self.dropped_telemetry % 25 < dropped_stale:
+                    print(
+                        "Cloud ingest coalesced "
+                        f"{dropped_stale} stale telemetry payload(s); "
+                        f"total dropped {self.dropped_telemetry}"
+                    )
+
+            try:
+                self.queue.put_nowait((payload, low_priority))
+                return
+            except queue.Full:
+                pass
 
         if low_priority:
             self.dropped_telemetry += 1
@@ -124,6 +136,31 @@ class CloudReporter:
             "Cloud ingest queue full; "
             f"dropped important event payload #{self.dropped_events}: {payload}"
         )
+
+    def _drop_queued_low_priority(self):
+        kept = []
+        dropped = 0
+
+        while True:
+            try:
+                item = self.queue.get_nowait()
+            except queue.Empty:
+                break
+
+            _payload, low_priority = item
+            if low_priority:
+                dropped += 1
+            else:
+                kept.append(item)
+            self.queue.task_done()
+
+        for item in kept:
+            try:
+                self.queue.put_nowait(item)
+            except queue.Full:
+                dropped += 1
+
+        return dropped
 
     def stop(self):
         if not self.enabled or self.thread is None:

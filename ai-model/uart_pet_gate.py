@@ -840,6 +840,14 @@ def mark_bowl_open(bowl_state, side, args):
         return
 
     scheduled_context = state.get("scheduled_context")
+    if (
+        state["status"] == "pending"
+        and scheduled_context is not None
+        and scheduled_context.get("access_lid_was_open")
+    ):
+        print(f"{side} lid is open during scheduled dispense; keeping bowl pending")
+        return
+
     state["status"] = "open"
     state["misses"] = 0
     state["next_check_at"] = time.monotonic() + args.presence_check_interval

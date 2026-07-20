@@ -22,6 +22,9 @@
 #define DISPENSE_PULSE_ZONE_GRAMS 8
 #define DISPENSE_PULSE_MS 120
 #define DISPENSE_PULSE_SETTLE_MS 700
+#define DISPENSE_MAX_RUN_MS 30000
+#define DISPENSE_NO_PROGRESS_MS 10000
+#define DISPENSE_MIN_PROGRESS_GRAMS 1
 
 static volatile bool left_dispense_enabled = false;
 static volatile bool right_dispense_enabled = false;
@@ -31,6 +34,12 @@ static volatile int left_target_grams = DEFAULT_LEFT_TARGET_GRAMS;
 static volatile int right_target_grams = DEFAULT_RIGHT_TARGET_GRAMS;
 static int left_target_readings = 0;
 static int right_target_readings = 0;
+static uint64_t left_dispense_started_ms = 0;
+static uint64_t right_dispense_started_ms = 0;
+static uint64_t left_last_progress_ms = 0;
+static uint64_t right_last_progress_ms = 0;
+static int left_best_grams = 0;
+static int right_best_grams = 0;
 
 int gramDataL;
 int gramDateR;
@@ -79,6 +88,121 @@ static bool should_pulse_dispense(int grams, int target_grams, bool open_lid_on_
     }
 
     return target_grams <= 15 || (target_grams - grams) <= DISPENSE_PULSE_ZONE_GRAMS;
+}
+
+static uint64_t now_ms(void)
+{
+    return esp_timer_get_time() / 1000;
+}
+
+static void reset_left_dispense_safety(void)
+{
+    left_dispense_started_ms = 0;
+    left_last_progress_ms = 0;
+    left_best_grams = 0;
+}
+
+static void reset_right_dispense_safety(void)
+{
+    right_dispense_started_ms = 0;
+    right_last_progress_ms = 0;
+    right_best_grams = 0;
+}
+
+static void start_left_dispense_safety(int grams)
+{
+    uint64_t started_ms = now_ms();
+    left_dispense_started_ms = started_ms;
+    left_last_progress_ms = started_ms;
+    left_best_grams = grams;
+}
+
+static void start_right_dispense_safety(int grams)
+{
+    uint64_t started_ms = now_ms();
+    right_dispense_started_ms = started_ms;
+    right_last_progress_ms = started_ms;
+    right_best_grams = grams;
+}
+
+static void fail_left_dispense(const char *reason, int grams)
+{
+    char message[64];
+    stepperStopLeftNoClean();
+    left_dispense_enabled = false;
+    left_target_readings = 0;
+    reset_left_dispense_safety();
+    left_open_lid_on_complete = true;
+    snprintf(message, sizeof(message), "DISPENSE_FAILED_LEFT %s %d\r\n", reason, grams);
+    printf("Left dispense failed: %s at %d g\n", reason, grams);
+    uart_comm_send_string(message);
+}
+
+static void fail_right_dispense(const char *reason, int grams)
+{
+    char message[64];
+    stepperStopRightNoClean();
+    right_dispense_enabled = false;
+    right_target_readings = 0;
+    reset_right_dispense_safety();
+    right_open_lid_on_complete = true;
+    snprintf(message, sizeof(message), "DISPENSE_FAILED_RIGHT %s %d\r\n", reason, grams);
+    printf("Right dispense failed: %s at %d g\n", reason, grams);
+    uart_comm_send_string(message);
+}
+
+static bool left_dispense_safety_failed(int grams)
+{
+    uint64_t current_ms = now_ms();
+
+    if (left_dispense_started_ms == 0) {
+        start_left_dispense_safety(grams);
+        return false;
+    }
+
+    if (grams >= left_best_grams + DISPENSE_MIN_PROGRESS_GRAMS) {
+        left_best_grams = grams;
+        left_last_progress_ms = current_ms;
+    }
+
+    if (current_ms - left_dispense_started_ms >= DISPENSE_MAX_RUN_MS) {
+        fail_left_dispense("TIMEOUT", grams);
+        return true;
+    }
+
+    if (current_ms - left_last_progress_ms >= DISPENSE_NO_PROGRESS_MS) {
+        fail_left_dispense("NO_PROGRESS", grams);
+        return true;
+    }
+
+    return false;
+}
+
+static bool right_dispense_safety_failed(int grams)
+{
+    uint64_t current_ms = now_ms();
+
+    if (right_dispense_started_ms == 0) {
+        start_right_dispense_safety(grams);
+        return false;
+    }
+
+    if (grams >= right_best_grams + DISPENSE_MIN_PROGRESS_GRAMS) {
+        right_best_grams = grams;
+        right_last_progress_ms = current_ms;
+    }
+
+    if (current_ms - right_dispense_started_ms >= DISPENSE_MAX_RUN_MS) {
+        fail_right_dispense("TIMEOUT", grams);
+        return true;
+    }
+
+    if (current_ms - right_last_progress_ms >= DISPENSE_NO_PROGRESS_MS) {
+        fail_right_dispense("NO_PROGRESS", grams);
+        return true;
+    }
+
+    return false;
 }
 
 esp_err_t hx711_init(hx711_t *dev)
@@ -189,6 +313,7 @@ void load_cell_enable_left(bool val){
 
     left_dispense_enabled = val;
     left_target_readings = 0;
+    reset_left_dispense_safety();
 
     if (!val) {
         stepperEnableLeft(false);
@@ -206,6 +331,7 @@ void load_cell_enable_right(bool val){
 
     right_dispense_enabled = val;
     right_target_readings = 0;
+    reset_right_dispense_safety();
 
     if (!val) {
         stepperEnableRight(false);
@@ -223,6 +349,7 @@ void load_cell_start_left_target(int target_grams, bool open_lid_on_complete){
     left_target_grams = target_grams;
     left_open_lid_on_complete = open_lid_on_complete;
     left_target_readings = 0;
+    start_left_dispense_safety(gramDataL);
     left_dispense_enabled = true;
     stepperStopLeftNoClean();
 }
@@ -235,6 +362,7 @@ void load_cell_start_right_target(int target_grams, bool open_lid_on_complete){
     right_target_grams = target_grams;
     right_open_lid_on_complete = open_lid_on_complete;
     right_target_readings = 0;
+    start_right_dispense_safety(gramDateR);
     right_dispense_enabled = true;
     stepperStopRightNoClean();
 }
@@ -260,6 +388,10 @@ static void update_left_dispense(bool ready, int grams)
     int stop_threshold = dispense_stop_threshold(target_grams);
 
     if (grams < stop_threshold) {
+        if (left_dispense_safety_failed(grams)) {
+            return;
+        }
+
         left_target_readings = 0;
         servoEnableLeft(false);
 
@@ -303,6 +435,7 @@ static void update_left_dispense(bool ready, int grams)
     printf("Left bowl target reached: %d/%d g\n", grams, target_grams);
     left_dispense_enabled = false;
     left_target_readings = 0;
+    reset_left_dispense_safety();
     if (left_open_lid_on_complete) {
         servoEnableLeft(true);
         uart_comm_send_string("OPENED_LEFT\r\n");
@@ -330,6 +463,10 @@ static void update_right_dispense(bool ready, int grams)
     int stop_threshold = dispense_stop_threshold(target_grams);
 
     if (grams < stop_threshold) {
+        if (right_dispense_safety_failed(grams)) {
+            return;
+        }
+
         right_target_readings = 0;
         servoEnableRight(false);
 
@@ -373,6 +510,7 @@ static void update_right_dispense(bool ready, int grams)
     printf("Right bowl target reached: %d/%d g\n", grams, target_grams);
     right_dispense_enabled = false;
     right_target_readings = 0;
+    reset_right_dispense_safety();
     if (right_open_lid_on_complete) {
         servoEnableRight(true);
         uart_comm_send_string("OPENED_RIGHT\r\n");

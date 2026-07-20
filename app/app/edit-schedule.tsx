@@ -24,13 +24,15 @@ import {
   type PetRow,
 } from '@/utils/paws-data';
 
+const DEFAULT_SCHEDULE_TIME = '08:00';
+
 export default function EditScheduleScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   const { session } = useSupabaseSession();
   const [pets, setPets] = useState<PetRow[]>([]);
   const [petId, setPetId] = useState('');
   const [mealName, setMealName] = useState('');
-  const [scheduledTime, setScheduledTime] = useState('08:00');
+  const [scheduledTime, setScheduledTime] = useState(formatTimeForInput(DEFAULT_SCHEDULE_TIME));
   const [portionGrams, setPortionGrams] = useState('');
   const [enabled, setEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -61,7 +63,7 @@ export default function EditScheduleScreen() {
 
           setPetId(schedule.pet_id);
           setMealName(schedule.meal_name);
-          setScheduledTime(schedule.scheduled_time.slice(0, 5));
+          setScheduledTime(formatTimeForInput(schedule.scheduled_time.slice(0, 5)));
           setPortionGrams(String(Number(schedule.portion_grams)));
           setEnabled(schedule.enabled);
         }
@@ -84,6 +86,7 @@ export default function EditScheduleScreen() {
   async function saveSchedule() {
     const ownerId = session?.user.id;
     const trimmedMealName = mealName.trim();
+    const normalizedTime = normalizeTimeInput(scheduledTime);
     const grams = Number(portionGrams);
 
     if (!ownerId) {
@@ -101,8 +104,8 @@ export default function EditScheduleScreen() {
       return;
     }
 
-    if (!isValidTime(scheduledTime)) {
-      Alert.alert('Invalid time', 'Use 24-hour HH:MM format, like 08:00 or 18:30.');
+    if (!normalizedTime) {
+      Alert.alert('Invalid time', 'Use a time like 8:00 AM, 3 PM, or 6:30 PM.');
       return;
     }
 
@@ -117,7 +120,7 @@ export default function EditScheduleScreen() {
       const values = {
         pet_id: petId,
         meal_name: trimmedMealName,
-        scheduled_time: scheduledTime,
+        scheduled_time: normalizedTime,
         portion_grams: grams,
         enabled,
       };
@@ -197,7 +200,15 @@ export default function EditScheduleScreen() {
 
             <LabeledInput label="Meal name" onChangeText={setMealName} value={mealName} />
             <LabeledInput
-              label="Time (HH:MM)"
+              helperText="Examples: 8:00 AM, 3 PM, 6:30 PM"
+              keyboardType="numbers-and-punctuation"
+              label="Time"
+              onBlur={() => {
+                const normalizedTime = normalizeTimeInput(scheduledTime);
+                if (normalizedTime) {
+                  setScheduledTime(formatTimeForInput(normalizedTime));
+                }
+              }}
               onChangeText={setScheduledTime}
               value={scheduledTime}
             />
@@ -245,30 +256,69 @@ function LabeledInput({
   label,
   value,
   onChangeText,
+  onBlur,
   keyboardType = 'default',
+  helperText,
 }: {
   label: string;
   value: string;
   onChangeText: (value: string) => void;
-  keyboardType?: 'default' | 'numeric';
+  onBlur?: () => void;
+  keyboardType?: 'default' | 'numeric' | 'numbers-and-punctuation';
+  helperText?: string;
 }) {
   return (
     <View style={styles.inputGroup}>
       <Text style={styles.label}>{label}</Text>
       <TextInput
         keyboardType={keyboardType}
+        onBlur={onBlur}
         onChangeText={onChangeText}
         placeholder={label}
         placeholderTextColor="#91A0B8"
         style={styles.input}
         value={value}
       />
+      {helperText ? <Text style={styles.helperText}>{helperText}</Text> : null}
     </View>
   );
 }
 
-function isValidTime(value: string) {
-  return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+function normalizeTimeInput(value: string) {
+  const trimmed = value.trim();
+  const twentyFourHourMatch = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(trimmed);
+  if (twentyFourHourMatch) {
+    return `${twentyFourHourMatch[1].padStart(2, '0')}:${twentyFourHourMatch[2]}`;
+  }
+
+  const standardTimeMatch = /^(\d{1,2})(?::([0-5]\d))?\s*([ap])\.?\s*m?\.?$/i.exec(trimmed);
+  if (!standardTimeMatch) {
+    return null;
+  }
+
+  const hour = Number(standardTimeMatch[1]);
+  const minutes = standardTimeMatch[2] ?? '00';
+  const meridiem = standardTimeMatch[3].toLowerCase();
+
+  if (hour < 1 || hour > 12) {
+    return null;
+  }
+
+  const normalizedHour = meridiem === 'p' ? (hour % 12) + 12 : hour % 12;
+  return `${String(normalizedHour).padStart(2, '0')}:${minutes}`;
+}
+
+function formatTimeForInput(value: string) {
+  const normalizedTime = normalizeTimeInput(value);
+  if (!normalizedTime) {
+    return value;
+  }
+
+  const [hours, minutes] = normalizedTime.split(':').map(Number);
+  const meridiem = hours >= 12 ? 'PM' : 'AM';
+  const hour = hours % 12 || 12;
+
+  return `${hour}:${String(minutes).padStart(2, '0')} ${meridiem}`;
 }
 
 const styles = StyleSheet.create({
@@ -418,5 +468,10 @@ const styles = StyleSheet.create({
     color: '#667085',
     fontSize: 14,
     lineHeight: 20,
+  },
+  helperText: {
+    color: '#667085',
+    fontSize: 12,
+    lineHeight: 18,
   },
 });

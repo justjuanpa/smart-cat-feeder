@@ -9,6 +9,7 @@ import urllib.error
 import urllib.request
 
 import numpy as np
+from PIL import Image, UnidentifiedImageError
 
 from pet_recognizer import PetRecognizer, image_files, load_profiles, save_profiles
 
@@ -52,11 +53,30 @@ def fetch_enrollment(url, serial_number, token):
         return error.code, {"error": detail}
 
 
+class DownloadedImageError(RuntimeError):
+    pass
+
+
 def download_image(url, output_path):
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with urllib.request.urlopen(url, timeout=30) as response:
-        output_path.write_bytes(response.read())
+        content = response.read()
+
+    output_path.write_bytes(content)
+    validate_image_file(output_path, content)
+
+
+def validate_image_file(image_path, content):
+    try:
+        with Image.open(image_path) as image:
+            image.verify()
+    except (UnidentifiedImageError, OSError) as error:
+        image_path.unlink(missing_ok=True)
+        prefix = content[:80].decode("utf-8", errors="replace").replace("\n", " ")
+        raise DownloadedImageError(
+            f"{image_path.name} is not a supported image file. First bytes: {prefix!r}"
+        ) from error
 
 
 def sync_training_images(pets, train_dir, clean=False):
@@ -87,12 +107,19 @@ def sync_training_images(pets, train_dir, clean=False):
 
             output_path = pet_dir / local_image_name(storage_path, index)
             if output_path.exists() and output_path.stat().st_size > 0:
-                downloaded += 1
+                try:
+                    validate_image_file(output_path, output_path.read_bytes())
+                    downloaded += 1
+                except DownloadedImageError as error:
+                    print(f"Skipping invalid cached image for {pet_name}: {error}")
                 continue
 
             print(f"Downloading {pet_name}: {storage_path}")
-            download_image(signed_url, output_path)
-            downloaded += 1
+            try:
+                download_image(signed_url, output_path)
+                downloaded += 1
+            except DownloadedImageError as error:
+                print(f"Skipping invalid enrollment image for {pet_name}: {error}")
 
         if downloaded:
             synced_pets.append((pet_key, pet_dir))

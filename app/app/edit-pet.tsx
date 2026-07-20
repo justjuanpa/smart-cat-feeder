@@ -16,7 +16,14 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useSupabaseSession } from '@/hooks/use-supabase-session';
-import { createPet, fetchPet, updatePet, uploadPetProfileImage, uploadPetTrainingImages } from '@/utils/paws-data';
+import {
+  createPet,
+  deletePet,
+  fetchPet,
+  updatePet,
+  uploadPetProfileImage,
+  uploadPetTrainingImages,
+} from '@/utils/paws-data';
 
 export default function EditPetScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
@@ -32,6 +39,7 @@ export default function EditPetScreen() {
   const [photoLoadFailed, setPhotoLoadFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [uploadingTrainingPhotos, setUploadingTrainingPhotos] = useState(false);
   const editing = Boolean(id);
@@ -109,6 +117,45 @@ export default function EditPetScreen() {
       Alert.alert('Could not save pet', error instanceof Error ? error.message : 'Try again in a moment.');
     } finally {
       setSaving(false);
+    }
+  }
+
+  function confirmDeletePet() {
+    if (!id || !session?.user.id) {
+      return;
+    }
+
+    Alert.alert(
+      'Delete pet profile?',
+      `This will remove ${name || 'this pet'} and its uploaded photos. Feeding history will stay, but it will no longer be attached to this pet.`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => void handleDeletePet(),
+        },
+      ],
+    );
+  }
+
+  async function handleDeletePet() {
+    if (!id || !session?.user.id) {
+      return;
+    }
+
+    setDeleting(true);
+
+    try {
+      await deletePet(session.user.id, id);
+      router.back();
+    } catch (error) {
+      Alert.alert('Could not delete pet', error instanceof Error ? error.message : 'Try again in a moment.');
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -296,11 +343,19 @@ export default function EditPetScreen() {
           </View>
 
           <Pressable
-            disabled={loading || saving}
+            disabled={loading || saving || deleting}
             onPress={savePet}
-            style={[styles.primaryButton, (loading || saving) && styles.disabledButton]}>
+            style={[styles.primaryButton, (loading || saving || deleting) && styles.disabledButton]}>
             <Text style={styles.primaryButtonText}>{saving ? 'Saving...' : editing ? 'Save changes' : 'Create pet'}</Text>
           </Pressable>
+          {id ? (
+            <Pressable
+              disabled={loading || deleting || saving}
+              onPress={confirmDeletePet}
+              style={[styles.dangerButton, (loading || deleting || saving) && styles.disabledButton]}>
+              <Text style={styles.dangerButtonText}>{deleting ? 'Deleting...' : 'Delete pet profile'}</Text>
+            </Pressable>
+          ) : null}
           <Pressable onPress={() => router.back()} style={styles.secondaryButton}>
             <Text style={styles.secondaryButtonText}>Cancel</Text>
           </Pressable>
@@ -482,6 +537,19 @@ const styles = StyleSheet.create({
   },
   secondaryButtonText: {
     color: '#1D4FA3',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  dangerButton: {
+    alignItems: 'center',
+    backgroundColor: '#FFF5F5',
+    borderColor: '#F4B6B6',
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: 16,
+  },
+  dangerButtonText: {
+    color: '#B42318',
     fontSize: 16,
     fontWeight: '900',
   },

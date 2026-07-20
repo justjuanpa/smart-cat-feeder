@@ -193,6 +193,30 @@ export async function updatePet(petId: string, values: PetUpdate) {
   }
 }
 
+export async function deletePet(ownerId: string, petId: string) {
+  const imagePaths = await fetchPetImagePaths(ownerId, petId);
+
+  if (imagePaths.length > 0) {
+    const { error: storageError } = await supabase.storage
+      .from('pet-images')
+      .remove(imagePaths);
+
+    if (storageError) {
+      throw storageError;
+    }
+  }
+
+  const { error } = await supabase
+    .from('pets')
+    .delete()
+    .eq('id', petId)
+    .eq('owner_id', ownerId);
+
+  if (error) {
+    throw error;
+  }
+}
+
 export async function createPet(ownerId: string, values: PetUpdate) {
   const { data, error } = await supabase
     .from('pets')
@@ -220,17 +244,16 @@ export async function uploadPetProfileImage({
   imageUri: string;
 }) {
   const previousProfileImages = await fetchPetProfileImagePaths(ownerId, petId);
-  const extension = getImageExtension(imageUri);
-  const contentType = getImageContentType(extension);
-  const storagePath = `${ownerId}/${petId}/profile-${Date.now()}.${extension}`;
   const base64 = await FileSystem.readAsStringAsync(imageUri, {
     encoding: FileSystem.EncodingType.Base64,
   });
+  const imageType = getSupportedImageType(base64);
+  const storagePath = `${ownerId}/${petId}/profile-${Date.now()}.${imageType.extension}`;
 
   const { error: uploadError } = await supabase.storage
     .from('pet-images')
     .upload(storagePath, decode(base64), {
-      contentType,
+      contentType: imageType.contentType,
       upsert: true,
     });
 
@@ -279,17 +302,16 @@ export async function uploadPetTrainingImages({
   const uploadedRows = [];
 
   for (const [index, imageUri] of imageUris.entries()) {
-    const extension = getImageExtension(imageUri);
-    const contentType = getImageContentType(extension);
-    const storagePath = `${ownerId}/${petId}/training-${Date.now()}-${index}.${extension}`;
     const base64 = await FileSystem.readAsStringAsync(imageUri, {
       encoding: FileSystem.EncodingType.Base64,
     });
+    const imageType = getSupportedImageType(base64);
+    const storagePath = `${ownerId}/${petId}/training-${Date.now()}-${index}.${imageType.extension}`;
 
     const { error: uploadError } = await supabase.storage
       .from('pet-images')
       .upload(storagePath, decode(base64), {
-        contentType,
+        contentType: imageType.contentType,
         upsert: true,
       });
 
@@ -716,6 +738,20 @@ async function fetchPetProfileImagePaths(ownerId: string, petId: string) {
   return (data ?? []).map((image) => image.storage_path);
 }
 
+async function fetchPetImagePaths(ownerId: string, petId: string) {
+  const { data, error } = await supabase
+    .from('pet_images')
+    .select('storage_path')
+    .eq('owner_id', ownerId)
+    .eq('pet_id', petId);
+
+  if (error) {
+    throw error;
+  }
+
+  return (data ?? []).map((image) => image.storage_path);
+}
+
 async function deleteOldPetProfileImages(storagePaths: string[]) {
   if (storagePaths.length === 0) {
     return;
@@ -739,26 +775,20 @@ async function deleteOldPetProfileImages(storagePaths: string[]) {
   }
 }
 
-function getImageExtension(uri: string) {
-  const extension = uri.split('?')[0]?.split('.').pop()?.toLowerCase();
-
-  if (extension === 'png' || extension === 'webp') {
-    return extension;
+function getSupportedImageType(base64: string) {
+  if (base64.startsWith('/9j/')) {
+    return { contentType: 'image/jpeg', extension: 'jpg' };
   }
 
-  return 'jpg';
-}
-
-function getImageContentType(extension: string) {
-  if (extension === 'png') {
-    return 'image/png';
+  if (base64.startsWith('iVBORw0KGgo')) {
+    return { contentType: 'image/png', extension: 'png' };
   }
 
-  if (extension === 'webp') {
-    return 'image/webp';
+  if (base64.startsWith('UklGR')) {
+    return { contentType: 'image/webp', extension: 'webp' };
   }
 
-  return 'image/jpeg';
+  throw new Error('Unsupported image format. Choose JPG, PNG, or WebP photos for pet uploads.');
 }
 
 export async function logManualFeedingEvent(userId: string, pet: PetRow) {

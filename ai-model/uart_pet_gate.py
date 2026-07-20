@@ -834,6 +834,7 @@ def check_pet_present_on_side(
     accepted = 0
     seen_any_pet_in_side = 0
     predictions = Counter()
+    expected_pet_key = str(expected_pet).strip().lower()
 
     for frame_index in range(1, frame_count + 1):
         frame = camera.capture_array()
@@ -889,7 +890,7 @@ def check_pet_present_on_side(
             f"accepted={recognition['accepted']}"
         )
 
-        if recognition["accepted"] and prediction == expected_pet:
+        if recognition["accepted"] and prediction == expected_pet_key:
             accepted += 1
 
     present = accepted >= min_accepted_frames
@@ -909,6 +910,20 @@ def any_bowl_active(bowl_state):
 
 def any_scheduled_dispense_active(bowl_state):
     return any(state.get("scheduled_context") is not None for state in bowl_state.values())
+
+
+def manual_mode_active(bowl_state):
+    return any(state.get("manual_mode") for state in bowl_state.values())
+
+
+def any_pir_suppression_active(bowl_state):
+    now = time.monotonic()
+    return any(
+        state.get("manual_mode")
+        or state.get("scheduled_context") is not None
+        or now < (state.get("ignore_pir_until") or 0)
+        for state in bowl_state.values()
+    )
 
 
 def reset_stale_pending_bowls(bowl_state, args):
@@ -962,6 +977,26 @@ def update_bowl_weight_state(bowl_state, payload, bowl_state_lock=None):
         if "right_bowl_weight_grams" in payload:
             bowl_state["RIGHT"]["latest_weight_grams"] = payload["right_bowl_weight_grams"]
             bowl_state["RIGHT"]["latest_weight_updated_at"] = update_time
+
+
+def sync_manual_mode_from_telemetry(bowl_state, payload):
+    raw_payload = payload.get("raw_payload", {})
+    if "manual_mode" not in raw_payload:
+        return
+
+    manual_mode = bool(raw_payload["manual_mode"])
+    for side, state in bowl_state.items():
+        state["manual_mode"] = manual_mode
+        if manual_mode:
+            state["misses"] = 0
+            state["next_check_at"] = None
+            if state["status"] in {"open", "closing"}:
+                state["status"] = "closed"
+                state["close_sent_at"] = None
+                state["current_pet_name"] = None
+
+    mode = "manual" if manual_mode else "automatic"
+    print(f"Feeder mode set to {mode}")
 
 
 def mark_bowl_open(bowl_state, side, args):
@@ -1066,6 +1101,7 @@ def mark_scheduled_dispense_complete(bowl_state, side, args, final_weight_grams=
 
     lid_note = "lid was already open" if lid_was_open else "lid remains closed"
     state["current_pet_name"] = pet_name if lid_was_open else None
+    state["ignore_pir_until"] = time.monotonic() + args.post_dispense_pir_ignore_seconds
     print(f"{side} scheduled dispense complete; {lid_note}")
     queue_cloud_report(
         args,
@@ -1124,6 +1160,7 @@ def mark_scheduled_dispense_failed(bowl_state, side, args, reason, final_weight_
     state["pending_since"] = None
     state["close_sent_at"] = None
     state["current_pet_name"] = pet_name if state["status"] == "open" else None
+    state["ignore_pir_until"] = time.monotonic() + args.post_dispense_pir_ignore_seconds
 
     print(f"{side} scheduled dispense failed: {reason} at {latest_weight_grams}g")
     report_schedule_run_failed(
@@ -1242,6 +1279,9 @@ def run_queued_scheduled_commands(connection, bowl_state, command_queue):
 
 def sync_lid_state_from_telemetry(bowl_state, payload, args):
     raw_payload = payload.get("raw_payload", {})
+    if manual_mode_active(bowl_state):
+        return
+
     lid_fields = {
         "LEFT": raw_payload.get("left_access_lid"),
         "RIGHT": raw_payload.get("right_access_lid"),
@@ -1255,6 +1295,10 @@ def sync_lid_state_from_telemetry(bowl_state, payload, args):
         state = bowl_state[side]
 
         if normalized_status == "open":
+            if state["status"] == "closed":
+                print(f"{side} lid telemetry says open while idle; treating as manual open")
+                continue
+
             if state["status"] == "closing":
                 close_sent_at = state.get("close_sent_at")
                 close_elapsed = (
@@ -1343,6 +1387,9 @@ def run_due_presence_checks(
     recognizer,
     profiles,
 ):
+    if manual_mode_active(bowl_state):
+        return
+
     now = time.monotonic()
 
     for side, state in bowl_state.items():
@@ -1559,6 +1606,12 @@ def main():
         help="Seconds to wait for DISPENSED_LEFT/RIGHT after a scheduled FEED command.",
     )
     parser.add_argument(
+        "--post-dispense-pir-ignore-seconds",
+        type=float,
+        default=8.0,
+        help="Seconds to ignore PIR triggers after a scheduled dispense completes or fails.",
+    )
+    parser.add_argument(
         "--close-telemetry-grace",
         type=float,
         default=4.0,
@@ -1705,6 +1758,8 @@ def main():
                     "latest_weight_updated_at": None,
                     "scheduled_context": None,
                     "current_pet_name": None,
+                    "ignore_pir_until": None,
+                    "manual_mode": False,
                 },
                 "RIGHT": {
                     "status": "closed",
@@ -1716,6 +1771,8 @@ def main():
                     "latest_weight_updated_at": None,
                     "scheduled_context": None,
                     "current_pet_name": None,
+                    "ignore_pir_until": None,
+                    "manual_mode": False,
                 },
             }
             bowl_state_lock = threading.Lock()
@@ -1796,6 +1853,10 @@ def main():
                         embedded_message["payload"],
                         bowl_state_lock,
                     )
+                    sync_manual_mode_from_telemetry(
+                        bowl_state,
+                        embedded_message["payload"],
+                    )
                     sync_lid_state_from_telemetry(
                         bowl_state,
                         embedded_message["payload"],
@@ -1817,8 +1878,8 @@ def main():
                     print("Ignoring unsupported UART message")
                     continue
 
-                if any_scheduled_dispense_active(bowl_state):
-                    print("Ignoring PIR trigger while scheduled dispense is active")
+                if any_pir_suppression_active(bowl_state):
+                    print("Ignoring PIR trigger during manual/scheduled suppression window")
                     continue
 
                 handle_trigger(

@@ -76,6 +76,28 @@ def parse_embedded_message(line):
             },
         }
 
+    if line == "Entering manual mode":
+        return {
+            "kind": "telemetry",
+            "payload": {
+                "notes": "Feeder entered manual mode",
+                "raw_payload": {
+                    "manual_mode": True,
+                },
+            },
+        }
+
+    if line == "Returning to automatic mode":
+        return {
+            "kind": "telemetry",
+            "payload": {
+                "notes": "Feeder returned to automatic mode",
+                "raw_payload": {
+                    "manual_mode": False,
+                },
+            },
+        }
+
     return None
 
 

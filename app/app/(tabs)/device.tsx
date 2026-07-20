@@ -27,6 +27,11 @@ export default function DeviceScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const loadDevice = useCallback(async () => {
+    const ownerId = session?.user.id;
+    if (!ownerId) {
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -34,7 +39,7 @@ export default function DeviceScreen() {
       const [nextStatus, nextScheduledDispenses, nextPets] = await Promise.all([
         fetchLatestDeviceStatus(),
         fetchLatestScheduledDispenses(),
-        fetchPets(),
+        fetchPets(ownerId),
       ]);
       setDeviceStatus(nextStatus);
       setLatestScheduledDispenses(nextScheduledDispenses);
@@ -45,7 +50,7 @@ export default function DeviceScreen() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [session?.user.id]);
 
   useEffect(() => {
     if (session?.user) {

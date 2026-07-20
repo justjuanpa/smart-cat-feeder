@@ -3,7 +3,6 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -15,7 +14,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { usePawsRealtime } from "@/hooks/use-paws-realtime";
 import { useSupabaseSession } from "@/hooks/use-supabase-session";
 import {
-  createDemoPetsAndSchedules,
   ensureProfile,
   fetchPets,
   fetchSchedules,
@@ -36,7 +34,6 @@ export default function PetsScreen() {
   const [scheduleRuns, setScheduleRuns] = useState<ScheduleRunRow[]>([]);
   const [failedAvatarIds, setFailedAvatarIds] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(true);
-  const [savingDemo, setSavingDemo] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [scheduleSort, setScheduleSort] = useState<ScheduleSort>("time");
 
@@ -51,14 +48,19 @@ export default function PetsScreen() {
   }, [scheduleSort, schedules]);
 
   const loadPetData = useCallback(async () => {
+    const ownerId = session?.user.id;
+    if (!ownerId) {
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
     try {
       const [nextPets, nextSchedules, nextScheduleRuns] = await Promise.all([
-        fetchPets(),
-        fetchSchedules(),
-        fetchTodayScheduleRuns(),
+        fetchPets(ownerId),
+        fetchSchedules(ownerId),
+        fetchTodayScheduleRuns(ownerId),
       ]);
       setPets(nextPets);
       setSchedules(nextSchedules);
@@ -71,7 +73,7 @@ export default function PetsScreen() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [session?.user.id]);
 
   useEffect(() => {
     if (!session?.user) {
@@ -87,28 +89,6 @@ export default function PetsScreen() {
     userId: session?.user.id,
     onPetChange: loadPetData,
   });
-
-  async function createDemoData() {
-    if (!session?.user) {
-      return;
-    }
-
-    setSavingDemo(true);
-
-    try {
-      await createDemoPetsAndSchedules(session.user.id);
-      await loadPetData();
-    } catch (demoError) {
-      Alert.alert(
-        "Could not create demo data",
-        demoError instanceof Error
-          ? demoError.message
-          : "Try again in a moment.",
-      );
-    } finally {
-      setSavingDemo(false);
-    }
-  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -139,9 +119,8 @@ export default function PetsScreen() {
               </Text>
             </View>
             <Pressable
-              disabled={savingDemo}
-              onPress={createDemoData}
-              style={[styles.addButton, savingDemo && styles.disabledButton]}
+              onPress={() => router.push("/edit-pet" as never)}
+              style={styles.addButton}
             >
               <MaterialIcons name="add" size={22} color="#FFFFFF" />
             </Pressable>
@@ -151,7 +130,7 @@ export default function PetsScreen() {
             <Text style={styles.muted}>
               {loading
                 ? "Loading pets..."
-                : "No pets yet. Press + to create Milo and Mimi."}
+                : "No pets yet. Press + to create your first pet profile."}
             </Text>
           ) : (
             pets.map((pet, index) => (

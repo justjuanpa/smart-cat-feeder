@@ -205,13 +205,45 @@ with check (auth.uid() = owner_id);
 
 create policy "Users can manage own pet images"
 on public.pet_images for all
-using (auth.uid() = owner_id)
-with check (auth.uid() = owner_id);
+using (
+  auth.uid() = owner_id
+  and exists (
+    select 1
+    from public.pets pet
+    where pet.id = pet_images.pet_id
+      and pet.owner_id = auth.uid()
+  )
+)
+with check (
+  auth.uid() = owner_id
+  and exists (
+    select 1
+    from public.pets pet
+    where pet.id = pet_images.pet_id
+      and pet.owner_id = auth.uid()
+  )
+);
 
 create policy "Users can manage own schedules"
 on public.feeding_schedules for all
-using (auth.uid() = owner_id)
-with check (auth.uid() = owner_id);
+using (
+  auth.uid() = owner_id
+  and exists (
+    select 1
+    from public.pets pet
+    where pet.id = feeding_schedules.pet_id
+      and pet.owner_id = auth.uid()
+  )
+)
+with check (
+  auth.uid() = owner_id
+  and exists (
+    select 1
+    from public.pets pet
+    where pet.id = feeding_schedules.pet_id
+      and pet.owner_id = auth.uid()
+  )
+);
 
 create policy "Users can read own feeding events"
 on public.feeding_events for select

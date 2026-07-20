@@ -142,14 +142,20 @@ export async function ensureProfile(userId: string, displayName?: string | null)
   }
 }
 
-export async function fetchPets() {
-  const { data, error } = await supabase
+export async function fetchPets(ownerId?: string) {
+  let query = supabase
     .from('pets')
     .select(
       'id, name, species, breed, daily_gram_limit, recognition_threshold, margin_threshold, active, pet_images(storage_path, image_role, created_at)',
     )
     .eq('active', true)
     .order('created_at', { ascending: true });
+
+  if (ownerId) {
+    query = query.eq('owner_id', ownerId);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     throw error;
@@ -185,6 +191,23 @@ export async function updatePet(petId: string, values: PetUpdate) {
   if (error) {
     throw error;
   }
+}
+
+export async function createPet(ownerId: string, values: PetUpdate) {
+  const { data, error } = await supabase
+    .from('pets')
+    .insert({
+      owner_id: ownerId,
+      ...values,
+    })
+    .select('id')
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data.id as string;
 }
 
 export async function uploadPetProfileImage({
@@ -304,11 +327,17 @@ export async function uploadPetTrainingImages({
   return { uploaded_count: uploadedRows.length };
 }
 
-export async function fetchSchedules() {
-  const { data, error } = await supabase
+export async function fetchSchedules(ownerId?: string) {
+  let query = supabase
     .from('feeding_schedules')
     .select('id, pet_id, meal_name, scheduled_time, portion_grams, enabled, created_at, pets(name)')
     .order('scheduled_time', { ascending: true });
+
+  if (ownerId) {
+    query = query.eq('owner_id', ownerId);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     throw error;
@@ -320,12 +349,17 @@ export async function fetchSchedules() {
   })) as FeedingScheduleRow[];
 }
 
-export async function fetchSchedule(scheduleId: string) {
-  const { data, error } = await supabase
+export async function fetchSchedule(scheduleId: string, ownerId?: string) {
+  let query = supabase
     .from('feeding_schedules')
     .select('id, pet_id, meal_name, scheduled_time, portion_grams, enabled, created_at, pets(name)')
-    .eq('id', scheduleId)
-    .single();
+    .eq('id', scheduleId);
+
+  if (ownerId) {
+    query = query.eq('owner_id', ownerId);
+  }
+
+  const { data, error } = await query.single();
 
   if (error) {
     throw error;
@@ -431,17 +465,22 @@ function buildFeedingEventsQuery() {
     );
 }
 
-export async function fetchTodayScheduleRuns() {
+export async function fetchTodayScheduleRuns(ownerId?: string) {
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
 
-  const { data, error } = await supabase
+  let query = supabase
     .from('schedule_runs')
     .select(
       'id, schedule_id, pet_id, scheduled_for, status, target_grams, starting_bowl_weight_grams, grams_needed, side, notes, updated_at',
     )
-    .gte('scheduled_for', startOfDay.toISOString())
-    .order('scheduled_for', { ascending: false });
+    .gte('scheduled_for', startOfDay.toISOString());
+
+  if (ownerId) {
+    query = query.eq('owner_id', ownerId);
+  }
+
+  const { data, error } = await query.order('scheduled_for', { ascending: false });
 
   if (error) {
     throw error;
@@ -506,6 +545,7 @@ export async function createDemoPetsAndSchedules(userId: string) {
   const { data: existingPets, error: existingPetError } = await supabase
     .from('pets')
     .select('id, name')
+    .eq('owner_id', userId)
     .in('name', ['Milo', 'Mimi']);
 
   if (existingPetError) {
@@ -541,6 +581,7 @@ export async function createDemoPetsAndSchedules(userId: string) {
   const { data: pets, error: petError } = await supabase
     .from('pets')
     .select('id, name')
+    .eq('owner_id', userId)
     .in('name', ['Milo', 'Mimi']);
 
   if (petError) {
@@ -584,6 +625,7 @@ export async function createDemoPetsAndSchedules(userId: string) {
   const { data: existingSchedules, error: existingScheduleError } = await supabase
     .from('feeding_schedules')
     .select('pet_id, meal_name, scheduled_time')
+    .eq('owner_id', userId)
     .in(
       'pet_id',
       scheduleRows.map((schedule) => schedule.pet_id),

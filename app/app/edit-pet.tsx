@@ -16,7 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useSupabaseSession } from '@/hooks/use-supabase-session';
-import { fetchPet, updatePet, uploadPetProfileImage, uploadPetTrainingImages } from '@/utils/paws-data';
+import { createPet, fetchPet, updatePet, uploadPetProfileImage, uploadPetTrainingImages } from '@/utils/paws-data';
 
 export default function EditPetScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
@@ -24,9 +24,9 @@ export default function EditPetScreen() {
   const [name, setName] = useState('');
   const [species, setSpecies] = useState('cat');
   const [breed, setBreed] = useState('');
-  const [dailyLimit, setDailyLimit] = useState('');
-  const [recognitionThreshold, setRecognitionThreshold] = useState('');
-  const [marginThreshold, setMarginThreshold] = useState('');
+  const [dailyLimit, setDailyLimit] = useState('40');
+  const [recognitionThreshold, setRecognitionThreshold] = useState('70');
+  const [marginThreshold, setMarginThreshold] = useState('8');
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [trainingImageCount, setTrainingImageCount] = useState(0);
   const [photoLoadFailed, setPhotoLoadFailed] = useState(false);
@@ -34,6 +34,7 @@ export default function EditPetScreen() {
   const [saving, setSaving] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [uploadingTrainingPhotos, setUploadingTrainingPhotos] = useState(false);
+  const editing = Boolean(id);
 
   useEffect(() => {
     if (!id) {
@@ -58,10 +59,7 @@ export default function EditPetScreen() {
   }, [id]);
 
   async function savePet() {
-    if (!id) {
-      return;
-    }
-
+    const ownerId = session?.user.id;
     const trimmedName = name.trim();
     const trimmedSpecies = species.trim() || 'cat';
     const dailyGrams = Number(dailyLimit);
@@ -83,17 +81,29 @@ export default function EditPetScreen() {
       return;
     }
 
+    if (!ownerId) {
+      Alert.alert('Not signed in', 'Sign in before editing pets.');
+      return;
+    }
+
     setSaving(true);
 
     try {
-      await updatePet(id, {
+      const values = {
         name: trimmedName,
         species: trimmedSpecies,
         breed: breed.trim() || null,
         daily_gram_limit: dailyGrams,
         recognition_threshold: recognitionPercent / 100,
         margin_threshold: marginPercent / 100,
-      });
+      };
+
+      if (id) {
+        await updatePet(id, values);
+      } else {
+        await createPet(ownerId, values);
+      }
+
       router.back();
     } catch (error) {
       Alert.alert('Could not save pet', error instanceof Error ? error.message : 'Try again in a moment.');
@@ -201,13 +211,16 @@ export default function EditPetScreen() {
           showsVerticalScrollIndicator={false}>
           <View>
             <Text style={styles.eyebrow}>Pet Profile</Text>
-            <Text style={styles.title}>Edit pet</Text>
+            <Text style={styles.title}>{editing ? 'Edit pet' : 'Add pet'}</Text>
             <Text style={styles.copy}>
-              Update the profile details used by the mobile app and feeding rules.
+              {editing
+                ? 'Update the profile details used by the mobile app and feeding rules.'
+                : 'Create a pet profile, then add photos for recognition enrollment.'}
             </Text>
           </View>
 
-          <View style={styles.photoCard}>
+          {id ? (
+            <View style={styles.photoCard}>
             <View style={styles.photoPreview}>
               {avatarUrl && !photoLoadFailed ? (
                 <Image
@@ -233,8 +246,10 @@ export default function EditPetScreen() {
               </Pressable>
             </View>
           </View>
+          ) : null}
 
-          <View style={styles.photoCard}>
+          {id ? (
+            <View style={styles.photoCard}>
             <View style={styles.enrollmentIcon}>
               <Text style={styles.enrollmentCount}>{trainingImageCount}</Text>
               <Text style={styles.enrollmentLabel}>photos</Text>
@@ -254,6 +269,7 @@ export default function EditPetScreen() {
               </Pressable>
             </View>
           </View>
+          ) : null}
 
           <View style={styles.form}>
             <LabeledInput label="Name" onChangeText={setName} value={name} />
@@ -283,7 +299,7 @@ export default function EditPetScreen() {
             disabled={loading || saving}
             onPress={savePet}
             style={[styles.primaryButton, (loading || saving) && styles.disabledButton]}>
-            <Text style={styles.primaryButtonText}>{saving ? 'Saving...' : 'Save changes'}</Text>
+            <Text style={styles.primaryButtonText}>{saving ? 'Saving...' : editing ? 'Save changes' : 'Create pet'}</Text>
           </Pressable>
           <Pressable onPress={() => router.back()} style={styles.secondaryButton}>
             <Text style={styles.secondaryButtonText}>Cancel</Text>

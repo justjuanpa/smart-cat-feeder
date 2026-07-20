@@ -44,8 +44,14 @@ export default function EditScheduleScreen() {
     let active = true;
 
     async function loadScheduleForm() {
+      const ownerId = session?.user.id;
+      if (!ownerId) {
+        setLoading(false);
+        return;
+      }
+
       try {
-        const nextPets = await fetchPets();
+        const nextPets = await fetchPets(ownerId);
 
         if (!active) {
           return;
@@ -55,7 +61,7 @@ export default function EditScheduleScreen() {
         setPetId(nextPets[0]?.id ?? '');
 
         if (id) {
-          const schedule = await fetchSchedule(id);
+          const schedule = await fetchSchedule(id, ownerId);
 
           if (!active) {
             return;
@@ -81,7 +87,7 @@ export default function EditScheduleScreen() {
     return () => {
       active = false;
     };
-  }, [id]);
+  }, [id, session?.user.id]);
 
   async function saveSchedule() {
     const ownerId = session?.user.id;

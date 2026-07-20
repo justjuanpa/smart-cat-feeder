@@ -31,12 +31,17 @@ export default function DashboardScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const loadDashboard = useCallback(async () => {
+    const ownerId = session?.user.id;
+    if (!ownerId) {
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
     try {
       const [nextPets, nextEvents, nextDeviceStatus] = await Promise.all([
-        fetchPets(),
+        fetchPets(ownerId),
         fetchFeedingEvents(),
         fetchLatestDeviceStatus(),
       ]);
@@ -52,7 +57,7 @@ export default function DashboardScreen() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [session?.user.id]);
 
   useEffect(() => {
     if (sessionLoading) {

@@ -25,13 +25,18 @@ export default function ActivityScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const loadActivity = useCallback(async () => {
+    const ownerId = session?.user.id;
+    if (!ownerId) {
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
     try {
       const [nextEvents, nextPets] = await Promise.all([
         fetchActivityFeedingEvents(ACTIVITY_VISIBLE_LIMIT),
-        fetchPets(),
+        fetchPets(ownerId),
       ]);
       setEvents(nextEvents);
       setPets(nextPets);
@@ -41,7 +46,7 @@ export default function ActivityScreen() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [session?.user.id]);
 
   useEffect(() => {
     if (session?.user) {

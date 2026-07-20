@@ -9,7 +9,6 @@ PHONE_CROP_TRAIN_DIR = SCRIPT_DIR / "train_phone_sim_crops"
 PROFILE_PATH = SCRIPT_DIR / "pet_profiles_phone_sim_crops.npz"
 
 PET_TRAIN_FOLDERS = {
-    "spiderman": [PHONE_CROP_TRAIN_DIR / "pet1"],
     "milo": [PHONE_CROP_TRAIN_DIR / "pet2"],
     "mimi": [PHONE_CROP_TRAIN_DIR / "pet3"],
 }

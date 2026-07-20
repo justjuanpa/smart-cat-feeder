@@ -8,16 +8,24 @@ import sys
 import urllib.error
 import urllib.request
 
+import cv2
 import numpy as np
 from PIL import Image, UnidentifiedImageError
+from ultralytics import YOLO
 
 from pet_recognizer import PetRecognizer, image_files, load_profiles, save_profiles
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+AI_MODEL_DIR = SCRIPT_DIR.parent
 DEFAULT_TRAIN_DIR = SCRIPT_DIR / "app_enrollment_training"
+DEFAULT_CROP_DIR = SCRIPT_DIR / "app_enrollment_training_crops"
 DEFAULT_PROFILE_PATH = SCRIPT_DIR / "pet_profiles_phone_sim_crops.npz"
 DEFAULT_BOWL_MAP_PATH = SCRIPT_DIR / "pet_bowl_map.json"
+DEFAULT_MODEL_PATH = AI_MODEL_DIR / "yolov8n_ncnn_model"
+ALLOWED_CROP_CLASSES = {"cat", "dog", "teddy bear"}
+DEFAULT_YOLO_CONFIDENCE = 0.25
+DEFAULT_CROP_PADDING = 0.00
 
 
 def default_enrollment_url():
@@ -127,6 +135,134 @@ def sync_training_images(pets, train_dir, clean=False):
             print(f"Synced {downloaded} enrollment image(s) for {pet_name}.")
 
     return synced_pets
+
+
+def crop_training_images(
+    synced_pets,
+    crop_dir,
+    model_path,
+    confidence_threshold,
+    padding_ratio,
+    clean=False,
+):
+    if clean and crop_dir.exists():
+        shutil.rmtree(crop_dir)
+
+    if not synced_pets:
+        return []
+
+    model = YOLO(str(model_path), task="detect")
+    cropped_pets = []
+
+    print(f"Loaded YOLO model from {model_path} for enrollment crops.")
+
+    for pet_key, pet_dir in synced_pets:
+        pet_crop_dir = crop_dir / pet_key
+        pet_crop_dir.mkdir(parents=True, exist_ok=True)
+
+        cropped = 0
+        for image_path in image_files(pet_dir):
+            output_path = pet_crop_dir / f"{image_path.stem}.jpg"
+            if output_path.exists() and output_path.stat().st_size > 0:
+                cropped += 1
+                continue
+
+            if crop_training_image(
+                model=model,
+                image_path=image_path,
+                output_path=output_path,
+                confidence_threshold=confidence_threshold,
+                padding_ratio=padding_ratio,
+            ):
+                cropped += 1
+
+        if cropped:
+            cropped_pets.append((pet_key, pet_crop_dir))
+            print(f"Cropped {cropped} enrollment image(s) for {pet_key}.")
+        else:
+            print(f"Skipping {pet_key}: YOLO found no cat, dog, or teddy bear crops.")
+
+    return cropped_pets
+
+
+def crop_training_image(model, image_path, output_path, confidence_threshold, padding_ratio):
+    image = cv2.imread(str(image_path))
+
+    if image is None:
+        print(f"{image_path.name}: could not read image for YOLO crop")
+        return False
+
+    results = model(image, verbose=False)
+    detection = best_allowed_detection(results, model, confidence_threshold)
+
+    if detection is None:
+        print(f"{image_path.name}: no cat, dog, or teddy bear YOLO detection")
+        return False
+
+    x1, y1, x2, y2 = add_padding(
+        detection["bbox"],
+        image_width=image.shape[1],
+        image_height=image.shape[0],
+        padding_ratio=padding_ratio,
+    )
+    crop = image[y1:y2, x1:x2]
+
+    if crop.size == 0:
+        print(f"{image_path.name}: empty crop from bbox {detection['bbox']}")
+        return False
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(output_path), crop)
+    print(
+        f"{image_path.name}: saved enrollment crop "
+        f"label={detection['label']} "
+        f"conf={detection['confidence']:.2f} "
+        f"bbox={detection['bbox']}"
+    )
+
+    return True
+
+
+def best_allowed_detection(results, model, confidence_threshold):
+    best_match = None
+
+    for box in results[0].boxes:
+        cls_id = int(box.cls[0])
+        confidence = float(box.conf[0])
+        label = model.names[cls_id]
+
+        if label not in ALLOWED_CROP_CLASSES:
+            continue
+
+        if confidence < confidence_threshold:
+            continue
+
+        x1, y1, x2, y2 = map(int, box.xyxy[0])
+        candidate = {
+            "label": label,
+            "confidence": confidence,
+            "bbox": (x1, y1, x2, y2),
+        }
+
+        if best_match is None or confidence > best_match["confidence"]:
+            best_match = candidate
+
+    return best_match
+
+
+def add_padding(bbox, image_width, image_height, padding_ratio):
+    x1, y1, x2, y2 = bbox
+    box_width = x2 - x1
+    box_height = y2 - y1
+    pad_x = int(box_width * padding_ratio)
+    pad_y = int(box_height * padding_ratio)
+
+    return (
+        max(0, x1 - pad_x),
+        max(0, y1 - pad_y),
+        min(image_width, x2 + pad_x),
+        min(image_height, y2 + pad_y),
+    )
 
 
 def build_profiles(synced_pets, output_path, min_images, merge_existing=True):
@@ -269,6 +405,35 @@ def main():
         help="Pet-to-bowl JSON map to write for uart_pet_gate.py.",
     )
     parser.add_argument(
+        "--crop-dir",
+        type=Path,
+        default=DEFAULT_CROP_DIR,
+        help="Local folder where YOLO-cropped enrollment images should be written.",
+    )
+    parser.add_argument(
+        "--yolo-model-path",
+        type=Path,
+        default=DEFAULT_MODEL_PATH,
+        help="YOLO model path used to crop app enrollment images.",
+    )
+    parser.add_argument(
+        "--yolo-confidence",
+        type=float,
+        default=DEFAULT_YOLO_CONFIDENCE,
+        help="Minimum YOLO confidence for enrollment crops.",
+    )
+    parser.add_argument(
+        "--crop-padding",
+        type=float,
+        default=DEFAULT_CROP_PADDING,
+        help="Padding ratio around YOLO enrollment crops.",
+    )
+    parser.add_argument(
+        "--no-yolo-crop",
+        action="store_true",
+        help="Build app-enrolled profiles from full downloaded images instead of YOLO crops.",
+    )
+    parser.add_argument(
         "--min-images",
         type=int,
         default=5,
@@ -300,8 +465,20 @@ def main():
 
     synced_pets = sync_training_images(response.get("pets", []), args.train_dir, clean=args.clean)
     save_bowl_map(response.get("pets", []), args.output_bowl_map)
+    profile_pets = (
+        synced_pets
+        if args.no_yolo_crop
+        else crop_training_images(
+            synced_pets=synced_pets,
+            crop_dir=args.crop_dir,
+            model_path=args.yolo_model_path,
+            confidence_threshold=args.yolo_confidence,
+            padding_ratio=args.crop_padding,
+            clean=args.clean,
+        )
+    )
     build_profiles(
-        synced_pets,
+        profile_pets,
         args.output_profile,
         args.min_images,
         merge_existing=not args.replace_existing,

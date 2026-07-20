@@ -101,6 +101,8 @@ python ai-model/pet-recognition/sync_app_enrollment_profiles.py --clean
 ```
 
 The script downloads the app-uploaded training images for the feeder owner,
-then writes `ai-model/pet-recognition/pet_profiles_phone_sim_crops.npz`, which
-is the profile file loaded by `uart_pet_gate.py`. Restart the Pi bridge after
-building profiles.
+uses YOLO to crop `cat`, `dog`, or `teddy bear` detections into
+`ai-model/pet-recognition/app_enrollment_training_crops`, then writes
+`ai-model/pet-recognition/pet_profiles_phone_sim_crops.npz`, which is the
+profile file loaded by `uart_pet_gate.py`. Restart the Pi bridge after building
+profiles.

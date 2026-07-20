@@ -907,6 +907,10 @@ def any_bowl_active(bowl_state):
     return any(state["status"] in {"pending", "open", "closing"} for state in bowl_state.values())
 
 
+def any_scheduled_dispense_active(bowl_state):
+    return any(state.get("scheduled_context") is not None for state in bowl_state.values())
+
+
 def reset_stale_pending_bowls(bowl_state, args):
     now = time.monotonic()
 
@@ -1811,6 +1815,10 @@ def main():
 
                 if message != args.trigger_message:
                     print("Ignoring unsupported UART message")
+                    continue
+
+                if any_scheduled_dispense_active(bowl_state):
+                    print("Ignoring PIR trigger while scheduled dispense is active")
                     continue
 
                 handle_trigger(

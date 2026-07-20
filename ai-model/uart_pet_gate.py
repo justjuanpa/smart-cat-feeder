@@ -961,6 +961,7 @@ def reset_stale_pending_bowls(bowl_state, args):
         state["next_check_at"] = None
         state["pending_since"] = None
         state["close_sent_at"] = None
+        state["open_confirmed_at"] = None
         state["scheduled_context"] = None
         state["current_pet_name"] = None
 
@@ -1018,6 +1019,7 @@ def mark_bowl_open(bowl_state, side, args):
     state["next_check_at"] = time.monotonic() + args.presence_check_interval
     state["pending_since"] = None
     state["close_sent_at"] = None
+    state["open_confirmed_at"] = time.monotonic()
     print(f"{side} bowl is open; next presence check in {args.presence_check_interval}s")
 
     if scheduled_context is not None:
@@ -1048,6 +1050,7 @@ def mark_bowl_closed(bowl_state, side, message):
     state["next_check_at"] = None
     state["pending_since"] = None
     state["close_sent_at"] = None
+    state["open_confirmed_at"] = None
     state["scheduled_context"] = None
     state["current_pet_name"] = None
 
@@ -1098,6 +1101,7 @@ def mark_scheduled_dispense_complete(bowl_state, side, args, final_weight_grams=
     )
     state["pending_since"] = None
     state["close_sent_at"] = None
+    state["open_confirmed_at"] = time.monotonic() if lid_was_open else None
 
     lid_note = "lid was already open" if lid_was_open else "lid remains closed"
     state["current_pet_name"] = pet_name if lid_was_open else None
@@ -1159,6 +1163,7 @@ def mark_scheduled_dispense_failed(bowl_state, side, args, reason, final_weight_
     )
     state["pending_since"] = None
     state["close_sent_at"] = None
+    state["open_confirmed_at"] = time.monotonic() if state["status"] == "open" else None
     state["current_pet_name"] = pet_name if state["status"] == "open" else None
     state["ignore_pir_until"] = time.monotonic() + args.post_dispense_pir_ignore_seconds
 
@@ -1329,6 +1334,20 @@ def sync_lid_state_from_telemetry(bowl_state, payload, args):
 
         if state["status"] not in {"open", "closing"}:
             continue
+
+        if state["status"] == "open":
+            open_confirmed_at = state.get("open_confirmed_at")
+            open_elapsed = (
+                time.monotonic() - open_confirmed_at
+                if open_confirmed_at is not None
+                else args.open_telemetry_grace
+            )
+            if open_elapsed < args.open_telemetry_grace:
+                print(
+                    f"{side} lid telemetry still says closed "
+                    f"{open_elapsed:.1f}s after open confirmation; waiting"
+                )
+                continue
 
         message = (
             f"{side} lid telemetry confirms close"
@@ -1618,6 +1637,12 @@ def main():
         help="Seconds to ignore open telemetry after sending CLOSE_LEFT/RIGHT.",
     )
     parser.add_argument(
+        "--open-telemetry-grace",
+        type=float,
+        default=3.0,
+        help="Seconds to ignore stale closed telemetry after OPENED_LEFT/RIGHT.",
+    )
+    parser.add_argument(
         "--telemetry-report-interval",
         type=float,
         default=10.0,
@@ -1754,6 +1779,7 @@ def main():
                     "next_check_at": None,
                     "pending_since": None,
                     "close_sent_at": None,
+                    "open_confirmed_at": None,
                     "latest_weight_grams": None,
                     "latest_weight_updated_at": None,
                     "scheduled_context": None,
@@ -1767,6 +1793,7 @@ def main():
                     "next_check_at": None,
                     "pending_since": None,
                     "close_sent_at": None,
+                    "open_confirmed_at": None,
                     "latest_weight_grams": None,
                     "latest_weight_updated_at": None,
                     "scheduled_context": None,

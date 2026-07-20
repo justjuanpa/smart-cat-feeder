@@ -23,6 +23,7 @@ import {
   updatePet,
   uploadPetProfileImage,
   uploadPetTrainingImages,
+  type BowlSide,
 } from '@/utils/paws-data';
 
 export default function EditPetScreen() {
@@ -31,9 +32,8 @@ export default function EditPetScreen() {
   const [name, setName] = useState('');
   const [species, setSpecies] = useState('cat');
   const [breed, setBreed] = useState('');
+  const [bowlSide, setBowlSide] = useState<BowlSide>('LEFT');
   const [dailyLimit, setDailyLimit] = useState('40');
-  const [recognitionThreshold, setRecognitionThreshold] = useState('70');
-  const [marginThreshold, setMarginThreshold] = useState('8');
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [trainingImageCount, setTrainingImageCount] = useState(0);
   const [photoLoadFailed, setPhotoLoadFailed] = useState(false);
@@ -55,9 +55,8 @@ export default function EditPetScreen() {
         setName(pet.name);
         setSpecies(pet.species);
         setBreed(pet.breed ?? '');
+        setBowlSide(pet.bowl_side);
         setDailyLimit(String(Number(pet.daily_gram_limit)));
-        setRecognitionThreshold(String(Math.round(pet.recognition_threshold * 100)));
-        setMarginThreshold(String(Math.round(pet.margin_threshold * 100)));
         setAvatarUrl(pet.avatar_url ?? null);
         setTrainingImageCount(pet.training_image_count ?? 0);
         setPhotoLoadFailed(false);
@@ -71,8 +70,6 @@ export default function EditPetScreen() {
     const trimmedName = name.trim();
     const trimmedSpecies = species.trim() || 'cat';
     const dailyGrams = Number(dailyLimit);
-    const recognitionPercent = Number(recognitionThreshold);
-    const marginPercent = Number(marginThreshold);
 
     if (!trimmedName) {
       Alert.alert('Missing name', 'Enter a pet name.');
@@ -81,11 +78,6 @@ export default function EditPetScreen() {
 
     if (!Number.isFinite(dailyGrams) || dailyGrams < 0) {
       Alert.alert('Invalid portion', 'Daily gram limit must be 0 or higher.');
-      return;
-    }
-
-    if (!isValidPercent(recognitionPercent) || !isValidPercent(marginPercent)) {
-      Alert.alert('Invalid threshold', 'Thresholds must be between 0 and 100.');
       return;
     }
 
@@ -101,9 +93,8 @@ export default function EditPetScreen() {
         name: trimmedName,
         species: trimmedSpecies,
         breed: breed.trim() || null,
+        bowl_side: bowlSide,
         daily_gram_limit: dailyGrams,
-        recognition_threshold: recognitionPercent / 100,
-        margin_threshold: marginPercent / 100,
       };
 
       if (id) {
@@ -175,6 +166,7 @@ export default function EditPetScreen() {
       allowsEditing: true,
       aspect: [1, 1],
       mediaTypes: ['images'],
+      preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
       quality: 0.85,
     });
 
@@ -214,6 +206,7 @@ export default function EditPetScreen() {
     const result = await ImagePicker.launchImageLibraryAsync({
       allowsMultipleSelection: true,
       mediaTypes: ['images'],
+      preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
       quality: 0.85,
       selectionLimit: 12,
     });
@@ -322,23 +315,26 @@ export default function EditPetScreen() {
             <LabeledInput label="Name" onChangeText={setName} value={name} />
             <LabeledInput label="Species" onChangeText={setSpecies} value={species} />
             <LabeledInput label="Breed" onChangeText={setBreed} value={breed} />
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Assigned bowl</Text>
+              <View style={styles.segmentedControl}>
+                <BowlButton
+                  active={bowlSide === 'LEFT'}
+                  label="Left bowl"
+                  onPress={() => setBowlSide('LEFT')}
+                />
+                <BowlButton
+                  active={bowlSide === 'RIGHT'}
+                  label="Right bowl"
+                  onPress={() => setBowlSide('RIGHT')}
+                />
+              </View>
+            </View>
             <LabeledInput
               keyboardType="numeric"
               label="Daily gram limit"
               onChangeText={setDailyLimit}
               value={dailyLimit}
-            />
-            <LabeledInput
-              keyboardType="numeric"
-              label="Recognition threshold (%)"
-              onChangeText={setRecognitionThreshold}
-              value={recognitionThreshold}
-            />
-            <LabeledInput
-              keyboardType="numeric"
-              label="Margin threshold (%)"
-              onChangeText={setMarginThreshold}
-              value={marginThreshold}
             />
           </View>
 
@@ -391,8 +387,22 @@ function LabeledInput({
   );
 }
 
-function isValidPercent(value: number) {
-  return Number.isFinite(value) && value >= 0 && value <= 100;
+function BowlButton({
+  active,
+  label,
+  onPress,
+}: {
+  active: boolean;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[styles.bowlButton, active && styles.bowlButtonActive]}>
+      <Text style={[styles.bowlButtonText, active && styles.bowlButtonTextActive]}>{label}</Text>
+    </Pressable>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -515,6 +525,31 @@ const styles = StyleSheet.create({
     fontSize: 16,
     paddingHorizontal: 14,
     paddingVertical: 12,
+  },
+  segmentedControl: {
+    backgroundColor: '#EEF4FF',
+    borderRadius: 8,
+    flexDirection: 'row',
+    gap: 6,
+    padding: 4,
+  },
+  bowlButton: {
+    alignItems: 'center',
+    borderRadius: 8,
+    flex: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 11,
+  },
+  bowlButtonActive: {
+    backgroundColor: '#FFFFFF',
+  },
+  bowlButtonText: {
+    color: '#5F6F8C',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  bowlButtonTextActive: {
+    color: '#1D4FA3',
   },
   primaryButton: {
     alignItems: 'center',

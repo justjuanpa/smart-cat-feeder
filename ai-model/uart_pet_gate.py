@@ -1,6 +1,7 @@
 import argparse
 from collections import Counter
 import datetime as dt
+import json
 import os
 from pathlib import Path
 import queue
@@ -26,14 +27,16 @@ import live_burst_recognition as burst_recognition
 
 VISION_VERSION = "uart-pet-gate-identity-v1"
 DEFAULT_TRIGGER_MESSAGE = "PIR TRIGGERED"
-PET_COMMANDS = {
+DEFAULT_PET_COMMANDS = {
     "mimi": "LEFT",
     "milo": "RIGHT",
 }
-SIDE_PETS = {
+DEFAULT_SIDE_PETS = {
     "LEFT": "mimi",
     "RIGHT": "milo",
 }
+PET_COMMANDS = dict(DEFAULT_PET_COMMANDS)
+SIDE_PETS = dict(DEFAULT_SIDE_PETS)
 CLOSE_COMMANDS = {
     "LEFT": "CLOSE_LEFT",
     "RIGHT": "CLOSE_RIGHT",
@@ -300,7 +303,7 @@ class ScheduleWorker:
     def _handle_due_schedule(self, schedule, due_at, run_key):
         pet = schedule_pet(schedule)
         pet_name = (pet.get("name") or "").strip()
-        side = PET_COMMANDS.get(pet_name.lower())
+        side = pet_bowl_side(pet) or PET_COMMANDS.get(pet_name.lower())
         target_grams = as_float(schedule.get("portion_grams"))
         meal_name = schedule.get("meal_name") or "Scheduled meal"
         scheduled_for = due_at.isoformat()
@@ -600,6 +603,14 @@ def schedule_pet(schedule):
     return pet
 
 
+def pet_bowl_side(pet):
+    side = str(pet.get("bowl_side") or "").strip().upper()
+    if side in {"LEFT", "RIGHT"}:
+        return side
+
+    return None
+
+
 def as_float(value):
     try:
         return float(value)
@@ -689,7 +700,33 @@ def derive_claim_schedule_run_url(ingest_url):
     return None
 
 
+def load_pet_bowl_map(map_path):
+    pet_commands = dict(DEFAULT_PET_COMMANDS)
+
+    if map_path and Path(map_path).exists():
+        try:
+            with Path(map_path).open(encoding="utf-8") as map_file:
+                configured_map = json.load(map_file)
+        except (OSError, json.JSONDecodeError) as error:
+            print(f"Could not load pet bowl map from {map_path}: {error}")
+        else:
+            for pet_name, side in configured_map.items():
+                normalized_pet = str(pet_name).strip().lower()
+                normalized_side = str(side).strip().upper()
+                if normalized_pet and normalized_side in {"LEFT", "RIGHT"}:
+                    pet_commands[normalized_pet] = normalized_side
+
+    side_pets = dict(DEFAULT_SIDE_PETS)
+    for pet_name, side in pet_commands.items():
+        side_pets[side] = pet_name
+
+    return pet_commands, side_pets
+
+
 def create_identity_pipeline(args):
+    global PET_COMMANDS, SIDE_PETS
+
+    PET_COMMANDS, SIDE_PETS = load_pet_bowl_map(args.pet_bowl_map_path)
     burst_recognition.FRAME_COUNT = args.frames
     burst_recognition.YOLO_CONFIDENCE_THRESHOLD = args.yolo_threshold
     burst_recognition.MIN_ACCEPTED_FRAMES = args.min_accepted_frames
@@ -906,6 +943,7 @@ def reset_stale_pending_bowls(bowl_state, args):
         state["pending_since"] = None
         state["close_sent_at"] = None
         state["scheduled_context"] = None
+        state["current_pet_name"] = None
 
 
 def update_bowl_weight_state(bowl_state, payload, bowl_state_lock=None):
@@ -972,6 +1010,7 @@ def mark_bowl_closed(bowl_state, side, message):
     state["pending_since"] = None
     state["close_sent_at"] = None
     state["scheduled_context"] = None
+    state["current_pet_name"] = None
 
 
 def mark_scheduled_dispense_complete(bowl_state, side, args, final_weight_grams=None):
@@ -1022,6 +1061,7 @@ def mark_scheduled_dispense_complete(bowl_state, side, args, final_weight_grams=
     state["close_sent_at"] = None
 
     lid_note = "lid was already open" if lid_was_open else "lid remains closed"
+    state["current_pet_name"] = pet_name if lid_was_open else None
     print(f"{side} scheduled dispense complete; {lid_note}")
     queue_cloud_report(
         args,
@@ -1079,6 +1119,7 @@ def mark_scheduled_dispense_failed(bowl_state, side, args, reason, final_weight_
     )
     state["pending_since"] = None
     state["close_sent_at"] = None
+    state["current_pet_name"] = pet_name if state["status"] == "open" else None
 
     print(f"{side} scheduled dispense failed: {reason} at {latest_weight_grams}g")
     report_schedule_run_failed(
@@ -1179,6 +1220,7 @@ def run_queued_scheduled_commands(connection, bowl_state, command_queue):
         state["next_check_at"] = None
         state["pending_since"] = time.monotonic()
         state["close_sent_at"] = None
+        state["current_pet_name"] = command.get("pet_name")
         state["scheduled_context"] = {
             "pet_name": command.get("pet_name"),
             "meal_name": command.get("meal_name"),
@@ -1306,7 +1348,7 @@ def run_due_presence_checks(
         if state["next_check_at"] is None or now < state["next_check_at"]:
             continue
 
-        expected_pet = SIDE_PETS[side]
+        expected_pet = state.get("current_pet_name") or SIDE_PETS[side]
         print(f"Checking whether {expected_pet} is still at {side} bowl")
         present = check_pet_present_on_side(
             camera=camera,
@@ -1388,6 +1430,7 @@ def handle_trigger(
     side_state["pending_since"] = time.monotonic()
     side_state["close_sent_at"] = None
     side_state["scheduled_context"] = None
+    side_state["current_pet_name"] = pet_name
     print(f"UART => {command} ({pet_name})")
     queue_cloud_report(
         args,
@@ -1457,6 +1500,11 @@ def main():
         "--profile-path",
         default=None,
         help="Path to a pet profile .npz file. Defaults to the cropped phone-sim profiles.",
+    )
+    parser.add_argument(
+        "--pet-bowl-map-path",
+        default=str(PET_RECOGNITION_DIR / "pet_bowl_map.json"),
+        help="Path to the app-synced pet-to-bowl JSON map.",
     )
     parser.add_argument(
         "--save-debug",
@@ -1652,6 +1700,7 @@ def main():
                     "latest_weight_grams": None,
                     "latest_weight_updated_at": None,
                     "scheduled_context": None,
+                    "current_pet_name": None,
                 },
                 "RIGHT": {
                     "status": "closed",
@@ -1662,6 +1711,7 @@ def main():
                     "latest_weight_grams": None,
                     "latest_weight_updated_at": None,
                     "scheduled_context": None,
+                    "current_pet_name": None,
                 },
             }
             bowl_state_lock = threading.Lock()

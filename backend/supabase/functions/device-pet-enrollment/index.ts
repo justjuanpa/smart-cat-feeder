@@ -14,6 +14,7 @@ type PetWithImages = {
   id: string;
   name: string;
   active: boolean;
+  bowl_side: 'LEFT' | 'RIGHT';
   recognition_threshold: number;
   margin_threshold: number;
   pet_images?: PetImage[] | null;
@@ -82,7 +83,7 @@ Deno.serve(async (request) => {
 
   const { data: pets, error: petError } = await supabase
     .from('pets')
-    .select('id, name, active, recognition_threshold, margin_threshold, pet_images(storage_path, image_role, created_at)')
+    .select('id, name, active, bowl_side, recognition_threshold, margin_threshold, pet_images(storage_path, image_role, created_at)')
     .eq('owner_id', device.owner_id)
     .eq('active', true)
     .order('created_at', { ascending: true });
@@ -118,6 +119,7 @@ Deno.serve(async (request) => {
       return {
         id: pet.id,
         name: pet.name,
+        bowl_side: pet.bowl_side,
         recognition_threshold: pet.recognition_threshold,
         margin_threshold: pet.margin_threshold,
         image_count: images.length,

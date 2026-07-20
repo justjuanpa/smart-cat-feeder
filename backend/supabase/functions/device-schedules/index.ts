@@ -67,7 +67,7 @@ Deno.serve(async (request) => {
 
   const { data: schedules, error: scheduleError } = await supabase
     .from('feeding_schedules')
-    .select('id, pet_id, meal_name, scheduled_time, portion_grams, enabled, pets(name, active)')
+    .select('id, pet_id, meal_name, scheduled_time, portion_grams, enabled, pets(name, active, bowl_side)')
     .eq('owner_id', device.owner_id)
     .eq('enabled', true)
     .order('scheduled_time', { ascending: true });

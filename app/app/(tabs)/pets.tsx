@@ -115,7 +115,7 @@ export default function PetsScreen() {
             <View style={styles.cardHeaderText}>
               <Text style={styles.sectionTitle}>Pet profiles</Text>
               <Text style={styles.muted}>
-                Recognition thresholds and daily limits
+                Photos, details, and daily feeding limits
               </Text>
             </View>
             <Pressable
@@ -173,7 +173,7 @@ export default function PetsScreen() {
                     {formatGrams(pet.daily_gram_limit)}/day
                   </Text>
                   <Text style={styles.small}>
-                    {Math.round(pet.recognition_threshold * 100)}% threshold
+                    {pet.bowl_side === "LEFT" ? "Left bowl" : "Right bowl"}
                   </Text>
                 </View>
                 <MaterialIcons name="chevron-right" size={22} color="#91A0B8" />

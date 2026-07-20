@@ -8,21 +8,21 @@ export type PetRow = {
   name: string;
   species: string;
   breed: string | null;
+  bowl_side: BowlSide;
   daily_gram_limit: number;
-  recognition_threshold: number;
-  margin_threshold: number;
   active: boolean;
   avatar_url?: string | null;
   training_image_count?: number;
 };
 
+export type BowlSide = 'LEFT' | 'RIGHT';
+
 export type PetUpdate = {
   name: string;
   species: string;
   breed: string | null;
+  bowl_side: BowlSide;
   daily_gram_limit: number;
-  recognition_threshold: number;
-  margin_threshold: number;
 };
 
 export type FeedingScheduleRow = {
@@ -146,7 +146,7 @@ export async function fetchPets(ownerId?: string) {
   let query = supabase
     .from('pets')
     .select(
-      'id, name, species, breed, daily_gram_limit, recognition_threshold, margin_threshold, active, pet_images(storage_path, image_role, created_at)',
+      'id, name, species, breed, bowl_side, daily_gram_limit, active, pet_images(storage_path, image_role, created_at)',
     )
     .eq('active', true)
     .order('created_at', { ascending: true });
@@ -168,7 +168,7 @@ export async function fetchPet(petId: string) {
   const { data, error } = await supabase
     .from('pets')
     .select(
-      'id, name, species, breed, daily_gram_limit, recognition_threshold, margin_threshold, active, pet_images(storage_path, image_role, created_at)',
+      'id, name, species, breed, bowl_side, daily_gram_limit, active, pet_images(storage_path, image_role, created_at)',
     )
     .eq('id', petId)
     .single();
@@ -581,6 +581,7 @@ export async function createDemoPetsAndSchedules(userId: string) {
       name: 'Milo',
       species: 'cat',
       breed: 'Orange tabby',
+      bowl_side: 'RIGHT',
       daily_gram_limit: 46,
     },
     {
@@ -588,6 +589,7 @@ export async function createDemoPetsAndSchedules(userId: string) {
       name: 'Mimi',
       species: 'cat',
       breed: 'Tuxedo',
+      bowl_side: 'LEFT',
       daily_gram_limit: 38,
     },
   ].filter((pet) => !existingPetNames.has(pet.name));

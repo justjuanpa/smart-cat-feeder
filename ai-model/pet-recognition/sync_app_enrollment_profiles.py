@@ -17,6 +17,7 @@ from pet_recognizer import PetRecognizer, image_files, load_profiles, save_profi
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_TRAIN_DIR = SCRIPT_DIR / "app_enrollment_training"
 DEFAULT_PROFILE_PATH = SCRIPT_DIR / "pet_profiles_phone_sim_crops.npz"
+DEFAULT_BOWL_MAP_PATH = SCRIPT_DIR / "pet_bowl_map.json"
 
 
 def default_enrollment_url():
@@ -161,6 +162,28 @@ def build_profiles(synced_pets, output_path, min_images, merge_existing=True):
     print(f"Saved enrolled pet profiles to {output_path}")
 
 
+def save_bowl_map(pets, output_path):
+    bowl_map = {}
+
+    for pet in pets:
+        pet_name = str(pet.get("name") or "").strip()
+        bowl_side = str(pet.get("bowl_side") or "").strip().upper()
+
+        if not pet_name or bowl_side not in {"LEFT", "RIGHT"}:
+            continue
+
+        bowl_map[pet_name.lower()] = bowl_side
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(bowl_map, indent=2, sort_keys=True), encoding="utf-8")
+
+    if bowl_map:
+        readable_map = ", ".join(f"{pet}: {side}" for pet, side in sorted(bowl_map.items()))
+        print(f"Saved pet bowl map to {output_path}: {readable_map}")
+    else:
+        print(f"Saved empty pet bowl map to {output_path}")
+
+
 def load_existing_profiles(profile_path):
     if not profile_path.exists():
         return {}
@@ -240,6 +263,12 @@ def main():
         help="Recognition profile .npz file to write.",
     )
     parser.add_argument(
+        "--output-bowl-map",
+        type=Path,
+        default=DEFAULT_BOWL_MAP_PATH,
+        help="Pet-to-bowl JSON map to write for uart_pet_gate.py.",
+    )
+    parser.add_argument(
         "--min-images",
         type=int,
         default=5,
@@ -270,6 +299,7 @@ def main():
         return 1
 
     synced_pets = sync_training_images(response.get("pets", []), args.train_dir, clean=args.clean)
+    save_bowl_map(response.get("pets", []), args.output_bowl_map)
     build_profiles(
         synced_pets,
         args.output_profile,

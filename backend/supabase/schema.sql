@@ -29,6 +29,8 @@ create table if not exists public.pets (
   name text not null,
   species text not null default 'cat',
   breed text,
+  bowl_side text not null default 'LEFT'
+    check (bowl_side in ('LEFT', 'RIGHT')),
   daily_gram_limit numeric(8, 2) not null default 0
     check (daily_gram_limit >= 0),
   recognition_threshold numeric(4, 3) not null default 0.700

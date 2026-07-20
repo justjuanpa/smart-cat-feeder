@@ -1,0 +1,202 @@
+import argparse
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import sys
+import urllib.error
+import urllib.request
+
+from pet_recognizer import PetRecognizer, image_files, save_profiles
+
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+DEFAULT_TRAIN_DIR = SCRIPT_DIR / "app_enrollment_training"
+DEFAULT_PROFILE_PATH = SCRIPT_DIR / "pet_profiles_phone_sim_crops.npz"
+
+
+def default_enrollment_url():
+    explicit_url = os.getenv("PAWS_PET_ENROLLMENT_URL")
+    if explicit_url:
+        return explicit_url
+
+    ingest_url = os.getenv("PAWS_INGEST_URL")
+    if ingest_url and ingest_url.endswith("/ingest-device"):
+        return f"{ingest_url.removesuffix('/ingest-device')}/device-pet-enrollment"
+
+    return None
+
+
+def fetch_enrollment(url, serial_number, token):
+    body = {
+        "serial_number": serial_number,
+    }
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(body).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "x-paws-device-token": token,
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            return response.status, json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8")
+        return error.code, {"error": detail}
+
+
+def download_image(url, output_path):
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with urllib.request.urlopen(url, timeout=30) as response:
+        output_path.write_bytes(response.read())
+
+
+def sync_training_images(pets, train_dir, clean=False):
+    if clean and train_dir.exists():
+        shutil.rmtree(train_dir)
+
+    synced_pets = []
+
+    for pet in pets:
+        pet_name = str(pet.get("name") or "").strip()
+        pet_key = pet_name.lower()
+        images = pet.get("images") or []
+
+        if not pet_name or not images:
+            print(f"Skipping {pet_name or 'unnamed pet'}: no enrollment images.")
+            continue
+
+        pet_dir = train_dir / slugify(pet_name)
+        pet_dir.mkdir(parents=True, exist_ok=True)
+
+        downloaded = 0
+        for index, image in enumerate(images, start=1):
+            signed_url = image.get("signed_url")
+            storage_path = image.get("storage_path") or f"{pet_key}-{index}.jpg"
+
+            if not signed_url:
+                continue
+
+            output_path = pet_dir / local_image_name(storage_path, index)
+            if output_path.exists() and output_path.stat().st_size > 0:
+                downloaded += 1
+                continue
+
+            print(f"Downloading {pet_name}: {storage_path}")
+            download_image(signed_url, output_path)
+            downloaded += 1
+
+        if downloaded:
+            synced_pets.append((pet_key, pet_dir))
+            print(f"Synced {downloaded} enrollment image(s) for {pet_name}.")
+
+    return synced_pets
+
+
+def build_profiles(synced_pets, output_path, min_images):
+    recognizer = PetRecognizer()
+    profiles = {}
+
+    for pet_key, pet_dir in synced_pets:
+        count = len(image_files(pet_dir))
+        if count < min_images:
+            print(
+                f"Warning: {pet_key} has {count} image(s); "
+                f"{min_images}+ is recommended for enrollment."
+            )
+
+        profiles[pet_key] = recognizer.build_embedding_set_from_folders([pet_dir])
+        print(f"Built profile for {pet_key} from {count} image(s).")
+
+    if not profiles:
+        raise RuntimeError("No pet profiles were built. Upload enrollment photos in the app first.")
+
+    save_profiles(profiles, output_path)
+    print(f"Saved enrolled pet profiles to {output_path}")
+
+
+def local_image_name(storage_path, index):
+    source_name = Path(storage_path).name
+    suffix = Path(source_name).suffix.lower()
+    if suffix not in {".jpg", ".jpeg", ".png"}:
+        suffix = ".jpg"
+
+    stem = re.sub(r"[^a-zA-Z0-9_.-]+", "-", Path(source_name).stem).strip("-")
+    if not stem:
+        stem = f"enrollment-{index}"
+
+    return f"{index:03d}-{stem}{suffix}"
+
+
+def slugify(value):
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", value.lower()).strip("-")
+    return slug or "pet"
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Sync pet enrollment photos from the PAWS app and rebuild Pi recognition profiles."
+    )
+    parser.add_argument(
+        "--url",
+        default=default_enrollment_url(),
+        help="Supabase Edge Function URL for device-pet-enrollment.",
+    )
+    parser.add_argument(
+        "--serial",
+        default=os.getenv("PAWS_DEVICE_SERIAL", "PAWS-DEMO-001"),
+        help="Provisioned feeder serial number.",
+    )
+    parser.add_argument(
+        "--token",
+        default=os.getenv("PAWS_DEVICE_TOKEN"),
+        help="Plain device token configured during provisioning.",
+    )
+    parser.add_argument(
+        "--train-dir",
+        type=Path,
+        default=DEFAULT_TRAIN_DIR,
+        help="Local folder where enrollment images should be downloaded.",
+    )
+    parser.add_argument(
+        "--output-profile",
+        type=Path,
+        default=DEFAULT_PROFILE_PATH,
+        help="Recognition profile .npz file to write.",
+    )
+    parser.add_argument(
+        "--min-images",
+        type=int,
+        default=5,
+        help="Recommended minimum image count per pet before warning.",
+    )
+    parser.add_argument(
+        "--clean",
+        action="store_true",
+        help="Delete the local enrollment image folder before downloading.",
+    )
+    args = parser.parse_args()
+
+    if not args.url or not args.token:
+        print("PAWS_PET_ENROLLMENT_URL and PAWS_DEVICE_TOKEN are required.", file=sys.stderr)
+        return 2
+
+    status, response = fetch_enrollment(args.url, args.serial, args.token)
+    if status < 200 or status >= 300:
+        print(f"Enrollment sync failed <= HTTP {status}: {response}", file=sys.stderr)
+        return 1
+
+    synced_pets = sync_training_images(response.get("pets", []), args.train_dir, clean=args.clean)
+    build_profiles(synced_pets, args.output_profile, args.min_images)
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

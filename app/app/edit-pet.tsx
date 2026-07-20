@@ -16,7 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useSupabaseSession } from '@/hooks/use-supabase-session';
-import { fetchPet, updatePet, uploadPetProfileImage } from '@/utils/paws-data';
+import { fetchPet, updatePet, uploadPetProfileImage, uploadPetTrainingImages } from '@/utils/paws-data';
 
 export default function EditPetScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
@@ -28,10 +28,12 @@ export default function EditPetScreen() {
   const [recognitionThreshold, setRecognitionThreshold] = useState('');
   const [marginThreshold, setMarginThreshold] = useState('');
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [trainingImageCount, setTrainingImageCount] = useState(0);
   const [photoLoadFailed, setPhotoLoadFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [uploadingTrainingPhotos, setUploadingTrainingPhotos] = useState(false);
 
   useEffect(() => {
     if (!id) {
@@ -48,6 +50,7 @@ export default function EditPetScreen() {
         setRecognitionThreshold(String(Math.round(pet.recognition_threshold * 100)));
         setMarginThreshold(String(Math.round(pet.margin_threshold * 100)));
         setAvatarUrl(pet.avatar_url ?? null);
+        setTrainingImageCount(pet.training_image_count ?? 0);
         setPhotoLoadFailed(false);
       })
       .catch((error: Error) => Alert.alert('Could not load pet', error.message))
@@ -139,6 +142,54 @@ export default function EditPetScreen() {
     }
   }
 
+  async function chooseTrainingPhotos() {
+    if (!id || !session?.user.id) {
+      return;
+    }
+
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!permission.granted) {
+      Alert.alert('Photo permission needed', 'Allow photo library access to upload recognition photos.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      allowsMultipleSelection: true,
+      mediaTypes: ['images'],
+      quality: 0.85,
+      selectionLimit: 12,
+    });
+
+    if (result.canceled) {
+      return;
+    }
+
+    const imageUris = result.assets.map((asset) => asset.uri).filter(Boolean);
+    if (imageUris.length === 0) {
+      return;
+    }
+
+    setUploadingTrainingPhotos(true);
+
+    try {
+      const uploaded = await uploadPetTrainingImages({
+        ownerId: session.user.id,
+        petId: id,
+        imageUris,
+      });
+      setTrainingImageCount((currentCount) => currentCount + uploaded.uploaded_count);
+      Alert.alert(
+        'Enrollment photos uploaded',
+        `${uploaded.uploaded_count} photo${uploaded.uploaded_count === 1 ? '' : 's'} added. Rebuild the Pi recognition profiles before testing recognition.`,
+      );
+    } catch (error) {
+      Alert.alert('Could not upload enrollment photos', error instanceof Error ? error.message : 'Try again in a moment.');
+    } finally {
+      setUploadingTrainingPhotos(false);
+    }
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
@@ -178,6 +229,27 @@ export default function EditPetScreen() {
                 style={[styles.photoButton, (loading || uploadingPhoto) && styles.disabledButton]}>
                 <Text style={styles.photoButtonText}>
                   {uploadingPhoto ? 'Uploading...' : avatarUrl ? 'Change photo' : 'Upload photo'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+
+          <View style={styles.photoCard}>
+            <View style={styles.enrollmentIcon}>
+              <Text style={styles.enrollmentCount}>{trainingImageCount}</Text>
+              <Text style={styles.enrollmentLabel}>photos</Text>
+            </View>
+            <View style={styles.photoText}>
+              <Text style={styles.cardTitle}>Recognition enrollment</Text>
+              <Text style={styles.copy}>
+                Add clear full-body and face photos from different angles. Aim for 8-12 photos per pet.
+              </Text>
+              <Pressable
+                disabled={loading || uploadingTrainingPhotos}
+                onPress={chooseTrainingPhotos}
+                style={[styles.photoButton, (loading || uploadingTrainingPhotos) && styles.disabledButton]}>
+                <Text style={styles.photoButtonText}>
+                  {uploadingTrainingPhotos ? 'Uploading...' : 'Add recognition photos'}
                 </Text>
               </Pressable>
             </View>
@@ -317,6 +389,24 @@ const styles = StyleSheet.create({
     color: '#1D4FA3',
     fontSize: 34,
     fontWeight: '900',
+  },
+  enrollmentIcon: {
+    alignItems: 'center',
+    backgroundColor: '#EEF4FF',
+    borderRadius: 8,
+    height: 82,
+    justifyContent: 'center',
+    width: 82,
+  },
+  enrollmentCount: {
+    color: '#1D4FA3',
+    fontSize: 30,
+    fontWeight: '900',
+  },
+  enrollmentLabel: {
+    color: '#5F6F8C',
+    fontSize: 12,
+    fontWeight: '800',
   },
   photoText: {
     flex: 1,

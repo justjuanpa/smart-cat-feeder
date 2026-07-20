@@ -13,6 +13,7 @@ export type PetRow = {
   margin_threshold: number;
   active: boolean;
   avatar_url?: string | null;
+  training_image_count?: number;
 };
 
 export type PetUpdate = {
@@ -243,6 +244,66 @@ export async function uploadPetProfileImage({
   };
 }
 
+export async function uploadPetTrainingImages({
+  ownerId,
+  petId,
+  imageUris,
+}: {
+  ownerId: string;
+  petId: string;
+  imageUris: string[];
+}) {
+  const uploadedRows = [];
+
+  for (const [index, imageUri] of imageUris.entries()) {
+    const extension = getImageExtension(imageUri);
+    const contentType = getImageContentType(extension);
+    const storagePath = `${ownerId}/${petId}/training-${Date.now()}-${index}.${extension}`;
+    const base64 = await FileSystem.readAsStringAsync(imageUri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+
+    const { error: uploadError } = await supabase.storage
+      .from('pet-images')
+      .upload(storagePath, decode(base64), {
+        contentType,
+        upsert: true,
+      });
+
+    if (uploadError) {
+      throw uploadError;
+    }
+
+    uploadedRows.push({
+      owner_id: ownerId,
+      pet_id: petId,
+      storage_path: storagePath,
+      image_role: 'training',
+    });
+  }
+
+  if (uploadedRows.length === 0) {
+    return { uploaded_count: 0 };
+  }
+
+  const { error: imageError } = await supabase.from('pet_images').insert(uploadedRows);
+
+  if (imageError) {
+    throw imageError;
+  }
+
+  const { error: petTouchError } = await supabase
+    .from('pets')
+    .update({ updated_at: new Date().toISOString() })
+    .eq('id', petId);
+
+  if (petTouchError) {
+    throw petTouchError;
+  }
+
+  return { uploaded_count: uploadedRows.length };
+}
+
 export async function fetchSchedules() {
   const { data, error } = await supabase
     .from('feeding_schedules')
@@ -340,15 +401,9 @@ export async function fetchActivityFeedingEvents(limit = 20) {
 
 async function fetchFeedingEventsByQuery(
   limit: number,
-  applyFilters: (
-    query: ReturnType<typeof supabase.from<'feeding_events'>>,
-  ) => ReturnType<typeof supabase.from<'feeding_events'>>,
+  applyFilters: (query: FeedingEventsQuery) => FeedingEventsQuery,
 ) {
-  let query = supabase
-    .from('feeding_events')
-    .select(
-      'id, pet_id, event_type, occurred_at, authorized, amount_grams, recognition_label, recognition_confidence, notes, raw_payload, pets(name)',
-    );
+  let query = buildFeedingEventsQuery();
 
   query = applyFilters(query);
 
@@ -364,6 +419,16 @@ async function fetchFeedingEventsByQuery(
     ...event,
     pets: normalizeRelatedPet(event.pets),
   })) as FeedingEventRow[];
+}
+
+type FeedingEventsQuery = ReturnType<typeof buildFeedingEventsQuery>;
+
+function buildFeedingEventsQuery() {
+  return supabase
+    .from('feeding_events')
+    .select(
+      'id, pet_id, event_type, occurred_at, authorized, amount_grams, recognition_label, recognition_confidence, notes, raw_payload, pets(name)',
+    );
 }
 
 export async function fetchTodayScheduleRuns() {
@@ -566,6 +631,7 @@ async function attachPetAvatarUrls(pets: PetWithImages[]) {
       return {
         ...petWithoutImages,
         avatar_url: profileImage ? await createPetImageSignedUrl(profileImage.storage_path) : null,
+        training_image_count: countTrainingImages(pet.pet_images ?? []),
       };
     }),
   );
@@ -575,6 +641,10 @@ function getLatestProfileImage(images: PetImageRow[]) {
   return images
     .filter((image) => image.image_role === 'profile')
     .sort((first, second) => second.created_at.localeCompare(first.created_at))[0];
+}
+
+function countTrainingImages(images: PetImageRow[]) {
+  return images.filter((image) => image.image_role === 'training').length;
 }
 
 async function createPetImageSignedUrl(storagePath: string) {

@@ -71,6 +71,7 @@ provisioning:
    supabase functions deploy ingest-device
    supabase functions deploy device-schedules
    supabase functions deploy claim-schedule-run
+   supabase functions deploy device-pet-enrollment
    ```
 
 The function has `verify_jwt = false` in `supabase/config.toml` because device
@@ -113,11 +114,13 @@ Schedule dry-run polling from `uart_pet_gate.py` uses the same device token as
 ingest. If `PAWS_INGEST_URL` ends in `/ingest-device`, the Pi automatically
 derives the schedule endpoint by replacing that suffix with `/device-schedules`.
 It also derives the run-claim endpoint by replacing that suffix with
-`/claim-schedule-run`. You can also set them explicitly:
+`/claim-schedule-run`. Pet enrollment sync uses `/device-pet-enrollment`.
+You can also set them explicitly:
 
 ```bash
 export PAWS_SCHEDULE_URL="https://YOUR_PROJECT_REF.supabase.co/functions/v1/device-schedules"
 export PAWS_CLAIM_SCHEDULE_RUN_URL="https://YOUR_PROJECT_REF.supabase.co/functions/v1/claim-schedule-run"
+export PAWS_PET_ENROLLMENT_URL="https://YOUR_PROJECT_REF.supabase.co/functions/v1/device-pet-enrollment"
 ```
 
 Real scheduled dispensing is opt-in on the Pi:
@@ -151,6 +154,8 @@ meals are the only path that dispenses food.
   fetch the owner's enabled feeding schedules.
 - `supabase/functions/claim-schedule-run/index.ts`: secure endpoint for the Pi
   to claim one scheduled meal occurrence before sending a motor command.
+- `supabase/functions/device-pet-enrollment/index.ts`: secure endpoint for the
+  Pi to fetch signed URLs for app-uploaded pet enrollment photos.
 - `supabase/provision-demo-device.sql`: helper SQL for creating a prototype
   feeder credential.
 - `.env.example`: environment variables needed by the mobile app and backend

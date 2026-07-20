@@ -9,6 +9,7 @@ Set these on the Raspberry Pi:
 
 ```bash
 export PAWS_INGEST_URL="https://your-project-ref.supabase.co/functions/v1/ingest-device"
+export PAWS_PET_ENROLLMENT_URL="https://your-project-ref.supabase.co/functions/v1/device-pet-enrollment"
 export PAWS_DEVICE_SERIAL="PAWS-DEMO-001"
 export PAWS_DEVICE_TOKEN="the-plain-token-used-in-provision-demo-device.sql"
 ```
@@ -85,3 +86,21 @@ Motor and load-cell results should be added later as `dispensed` and
 
 Do not run `embedded_data.py` as a second process. It is imported by
 `uart_pet_gate.py` as a parser so only one process owns `/dev/serial0`.
+
+## App Pet Enrollment
+
+The mobile app can upload recognition training photos from each pet profile.
+After uploading photos, rebuild the Pi recognition profile before testing CV:
+
+```bash
+export PAWS_PET_ENROLLMENT_URL="https://your-project-ref.supabase.co/functions/v1/device-pet-enrollment"
+export PAWS_DEVICE_SERIAL="PAWS-DEMO-001"
+export PAWS_DEVICE_TOKEN="the-plain-token-used-in-provision-demo-device.sql"
+
+python ai-model/pet-recognition/sync_app_enrollment_profiles.py --clean
+```
+
+The script downloads the app-uploaded training images for the feeder owner,
+then writes `ai-model/pet-recognition/pet_profiles_phone_sim_crops.npz`, which
+is the profile file loaded by `uart_pet_gate.py`. Restart the Pi bridge after
+building profiles.

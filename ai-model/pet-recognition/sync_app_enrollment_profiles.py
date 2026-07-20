@@ -8,7 +8,9 @@ import sys
 import urllib.error
 import urllib.request
 
-from pet_recognizer import PetRecognizer, image_files, save_profiles
+import numpy as np
+
+from pet_recognizer import PetRecognizer, image_files, load_profiles, save_profiles
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -99,9 +101,10 @@ def sync_training_images(pets, train_dir, clean=False):
     return synced_pets
 
 
-def build_profiles(synced_pets, output_path, min_images):
+def build_profiles(synced_pets, output_path, min_images, merge_existing=True):
     recognizer = PetRecognizer()
-    profiles = {}
+    profiles = load_existing_profiles(output_path) if merge_existing else {}
+    updated_pet_keys = set()
 
     for pet_key, pet_dir in synced_pets:
         count = len(image_files(pet_dir))
@@ -111,14 +114,53 @@ def build_profiles(synced_pets, output_path, min_images):
                 f"{min_images}+ is recommended for enrollment."
             )
 
-        profiles[pet_key] = recognizer.build_embedding_set_from_folders([pet_dir])
+        app_profile = recognizer.build_embedding_set_from_folders([pet_dir])
+        profiles[pet_key] = merge_profile_vectors(profiles.get(pet_key), app_profile)
+        updated_pet_keys.add(pet_key)
         print(f"Built profile for {pet_key} from {count} image(s).")
 
     if not profiles:
-        raise RuntimeError("No pet profiles were built. Upload enrollment photos in the app first.")
+        raise RuntimeError(
+            "No pet profiles were built. Upload enrollment photos in the app first "
+            "or run this on the Pi with an existing profile file to preserve."
+        )
 
+    preserved_pet_keys = sorted(set(profiles) - updated_pet_keys)
+    if preserved_pet_keys:
+        print(f"Preserved existing profile(s): {', '.join(preserved_pet_keys)}.")
+
+    backup_existing_profile(output_path)
     save_profiles(profiles, output_path)
     print(f"Saved enrolled pet profiles to {output_path}")
+
+
+def load_existing_profiles(profile_path):
+    if not profile_path.exists():
+        return {}
+
+    profiles = load_profiles(profile_path)
+    print(f"Loaded existing profile(s): {', '.join(sorted(profiles))}.")
+
+    return profiles
+
+
+def merge_profile_vectors(existing, incoming):
+    if existing is None:
+        return incoming
+
+    existing_vectors = np.atleast_2d(existing)
+    incoming_vectors = np.atleast_2d(incoming)
+
+    return np.vstack([existing_vectors, incoming_vectors])
+
+
+def backup_existing_profile(profile_path):
+    if not profile_path.exists():
+        return
+
+    backup_path = profile_path.with_suffix(f"{profile_path.suffix}.bak")
+    shutil.copy2(profile_path, backup_path)
+    print(f"Backed up previous profile file to {backup_path}")
 
 
 def local_image_name(storage_path, index):
@@ -181,6 +223,14 @@ def main():
         action="store_true",
         help="Delete the local enrollment image folder before downloading.",
     )
+    parser.add_argument(
+        "--replace-existing",
+        action="store_true",
+        help=(
+            "Replace the profile file with only app enrollment images. "
+            "By default, existing Pi-trained profiles are preserved and app images are merged in."
+        ),
+    )
     args = parser.parse_args()
 
     if not args.url or not args.token:
@@ -193,7 +243,12 @@ def main():
         return 1
 
     synced_pets = sync_training_images(response.get("pets", []), args.train_dir, clean=args.clean)
-    build_profiles(synced_pets, args.output_profile, args.min_images)
+    build_profiles(
+        synced_pets,
+        args.output_profile,
+        args.min_images,
+        merge_existing=not args.replace_existing,
+    )
 
     return 0
 

@@ -6,3 +6,6 @@ verify_jwt = false
 
 [functions.claim-schedule-run]
 verify_jwt = false
+
+[functions.device-pet-enrollment]
+verify_jwt = false

@@ -84,7 +84,7 @@ export default function DeviceScreen() {
 
         <View style={styles.heroCard}>
           <View style={[styles.statusDot, online ? styles.onlineDot : styles.offlineDot]} />
-          <Text style={styles.heroLabel}>{deviceStatus?.devices?.name ?? 'PAWS Feeder'}</Text>
+          <Text style={styles.heroLabel}>PAWS Feeder</Text>
           <Text style={styles.heroTitle}>{online ? 'Online' : 'No heartbeat yet'}</Text>
           <Text style={styles.muted}>
             {deviceStatus
@@ -105,7 +105,6 @@ export default function DeviceScreen() {
           <Metric label="Right bowl" value={formatBowlGrams(deviceStatus?.right_bowl_weight_grams ?? null)} />
           <Metric label="Last motion" value={formatRelativeTime(deviceStatus?.last_motion_at ?? null)} />
           <Metric label="Last event" value={formatRelativeTime(deviceStatus?.last_event_at ?? null)} />
-          <Metric label="Vision" value={deviceStatus?.vision_version ?? 'Unknown'} />
         </View>
 
         <View style={styles.card}>
@@ -144,14 +143,6 @@ export default function DeviceScreen() {
           ) : (
             <Text style={styles.muted}>Create pet profiles to track scheduled dispenses per pet.</Text>
           )}
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>System readiness</Text>
-          <SetupRow done title="Supabase schema" detail="Tables and RLS are live" />
-          <SetupRow done title="Mobile app backend" detail="Auth, profiles, events, and status connected" />
-          <SetupRow done={online} title="Raspberry Pi bridge" detail={online ? 'Heartbeat received' : 'Waiting for Pi'} />
-          <SetupRow done={latestScheduledDispenses.length > 0} title="Motors and sensors" detail={latestScheduledDispenses.length > 0 ? 'Scheduled dispense confirmed' : 'Waiting for scheduled dispense'} />
         </View>
 
         <Pressable onPress={signOut} style={styles.secondaryButton}>
@@ -253,20 +244,6 @@ function numberFromUnknown(value: unknown) {
   }
 
   return null;
-}
-
-function SetupRow({ title, detail, done }: { title: string; detail: string; done: boolean }) {
-  return (
-    <View style={styles.setupRow}>
-      <View style={[styles.statusIcon, done ? styles.doneIcon : styles.pendingIcon]}>
-        <MaterialIcons name={done ? 'check' : 'sync'} size={18} color={done ? '#166534' : '#92400E'} />
-      </View>
-      <View style={styles.rowText}>
-        <Text style={styles.cardTitle}>{title}</Text>
-        <Text style={styles.muted}>{detail}</Text>
-      </View>
-    </View>
-  );
 }
 
 const styles = StyleSheet.create({
@@ -371,11 +348,6 @@ const styles = StyleSheet.create({
     fontSize: 21,
     fontWeight: '900',
   },
-  setupRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 12,
-  },
   lastDispenseRow: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -398,20 +370,6 @@ const styles = StyleSheet.create({
     color: '#1D4FA3',
     fontSize: 18,
     fontWeight: '900',
-  },
-  statusIcon: {
-    alignItems: 'center',
-    backgroundColor: '#EEF4FF',
-    borderRadius: 8,
-    height: 36,
-    justifyContent: 'center',
-    width: 36,
-  },
-  doneIcon: {
-    backgroundColor: '#DCFCE7',
-  },
-  pendingIcon: {
-    backgroundColor: '#FEF3C7',
   },
   rowText: {
     flex: 1,

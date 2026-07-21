@@ -79,8 +79,6 @@ export default function DashboardScreen() {
   });
 
   const latestEvent = events[0];
-  const title =
-    pets.length > 0 ? pets.map((pet) => pet.name).join(" & ") : "PAWS Feeder";
   const deviceOnline = Boolean(deviceStatus?.online);
 
   return (
@@ -89,7 +87,7 @@ export default function DashboardScreen() {
         <View style={styles.header}>
           <View>
             <Text style={styles.eyebrow}>Smart Feeder</Text>
-            <Text style={styles.title}>{title}</Text>
+            <Text style={styles.title}>PAWS</Text>
           </View>
           <Pressable onPress={loadDashboard} style={styles.refreshButton}>
             <MaterialIcons name="refresh" size={22} color="#1D4FA3" />
@@ -109,14 +107,11 @@ export default function DashboardScreen() {
           </Text>
           <Text style={styles.bodyText}>
             {deviceStatus
-              ? `Last update ${formatRelativeTime(deviceStatus.updated_at)} from ${
-                  deviceStatus.devices?.name ?? "PAWS Feeder"
-                }.`
+              ? `Last update ${formatRelativeTime(deviceStatus.updated_at)}.`
               : "Start the Raspberry Pi bridge to send the first heartbeat."}
           </Text>
           <View style={styles.metrics}>
-            <Metric label="Pets" value={String(pets.length)} />
-            <Metric label="Events" value={String(events.length)} />
+            <Metric centered label="Pets" value={String(pets.length)} />
             <Metric label="Bowls" value={formatBowlWeights(deviceStatus)} />
           </View>
         </View>
@@ -182,11 +177,23 @@ function formatBowlGrams(value: number | null) {
   return value == null ? "--" : formatGrams(value);
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({
+  centered = false,
+  label,
+  value,
+}: {
+  centered?: boolean;
+  label: string;
+  value: string;
+}) {
   return (
-    <View style={styles.metric}>
-      <Text style={styles.metricValue}>{value}</Text>
-      <Text style={styles.metricLabel}>{label}</Text>
+    <View style={[styles.metric, centered ? styles.centeredMetric : null]}>
+      <Text style={[styles.metricValue, centered ? styles.centeredText : null]}>
+        {value}
+      </Text>
+      <Text style={[styles.metricLabel, centered ? styles.centeredText : null]}>
+        {label}
+      </Text>
     </View>
   );
 }
@@ -301,6 +308,13 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     flex: 1,
     padding: 12,
+  },
+  centeredMetric: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  centeredText: {
+    textAlign: "center",
   },
   metricValue: {
     color: "#10213F",

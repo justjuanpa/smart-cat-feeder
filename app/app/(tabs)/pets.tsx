@@ -115,7 +115,7 @@ export default function PetsScreen() {
             <View style={styles.cardHeaderText}>
               <Text style={styles.sectionTitle}>Pet profiles</Text>
               <Text style={styles.muted}>
-                Photos, details, and daily feeding limits
+                Photos, details, and bowl assignments
               </Text>
             </View>
             <Pressable
@@ -169,9 +169,6 @@ export default function PetsScreen() {
                   <Text style={styles.muted}>{pet.breed ?? pet.species}</Text>
                 </View>
                 <View style={styles.rowMeta}>
-                  <Text style={styles.amount}>
-                    {formatGrams(pet.daily_gram_limit)}/day
-                  </Text>
                   <Text style={styles.small}>
                     {pet.bowl_side === "LEFT" ? "Left bowl" : "Right bowl"}
                   </Text>
@@ -552,11 +549,6 @@ const styles = StyleSheet.create({
     color: "#667085",
     fontSize: 14,
     lineHeight: 20,
-  },
-  amount: {
-    color: "#10213F",
-    fontSize: 14,
-    fontWeight: "900",
   },
   small: {
     color: "#7A8BA6",

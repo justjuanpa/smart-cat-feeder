@@ -9,7 +9,6 @@ export type PetRow = {
   species: string;
   breed: string | null;
   bowl_side: BowlSide;
-  daily_gram_limit: number;
   active: boolean;
   avatar_url?: string | null;
   training_image_count?: number;
@@ -22,7 +21,6 @@ export type PetUpdate = {
   species: string;
   breed: string | null;
   bowl_side: BowlSide;
-  daily_gram_limit: number;
 };
 
 export type FeedingScheduleRow = {
@@ -146,7 +144,7 @@ export async function fetchPets(ownerId?: string) {
   let query = supabase
     .from('pets')
     .select(
-      'id, name, species, breed, bowl_side, daily_gram_limit, active, pet_images(storage_path, image_role, created_at)',
+      'id, name, species, breed, bowl_side, active, pet_images(storage_path, image_role, created_at)',
     )
     .eq('active', true)
     .order('created_at', { ascending: true });
@@ -168,7 +166,7 @@ export async function fetchPet(petId: string) {
   const { data, error } = await supabase
     .from('pets')
     .select(
-      'id, name, species, breed, bowl_side, daily_gram_limit, active, pet_images(storage_path, image_role, created_at)',
+      'id, name, species, breed, bowl_side, active, pet_images(storage_path, image_role, created_at)',
     )
     .eq('id', petId)
     .single();
@@ -582,7 +580,6 @@ export async function createDemoPetsAndSchedules(userId: string) {
       species: 'cat',
       breed: 'Orange tabby',
       bowl_side: 'RIGHT',
-      daily_gram_limit: 46,
     },
     {
       owner_id: userId,
@@ -590,7 +587,6 @@ export async function createDemoPetsAndSchedules(userId: string) {
       species: 'cat',
       breed: 'Tuxedo',
       bowl_side: 'LEFT',
-      daily_gram_limit: 38,
     },
   ].filter((pet) => !existingPetNames.has(pet.name));
 
@@ -793,18 +789,3 @@ function getSupportedImageType(base64: string) {
   throw new Error('Unsupported image format. Choose JPG, PNG, or WebP photos for pet uploads.');
 }
 
-export async function logManualFeedingEvent(userId: string, pet: PetRow) {
-  const { error } = await supabase.from('feeding_events').insert({
-    owner_id: userId,
-    pet_id: pet.id,
-    event_type: 'manual',
-    authorized: true,
-    amount_grams: pet.daily_gram_limit,
-    recognition_label: pet.name,
-    notes: 'Manual demo event from the mobile app',
-  });
-
-  if (error) {
-    throw error;
-  }
-}

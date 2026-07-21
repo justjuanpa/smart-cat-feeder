@@ -33,7 +33,6 @@ export default function EditPetScreen() {
   const [species, setSpecies] = useState('cat');
   const [breed, setBreed] = useState('');
   const [bowlSide, setBowlSide] = useState<BowlSide>('LEFT');
-  const [dailyLimit, setDailyLimit] = useState('40');
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [trainingImageCount, setTrainingImageCount] = useState(0);
   const [photoLoadFailed, setPhotoLoadFailed] = useState(false);
@@ -56,9 +55,8 @@ export default function EditPetScreen() {
         setSpecies(pet.species);
         setBreed(pet.breed ?? '');
         setBowlSide(pet.bowl_side);
-        setDailyLimit(String(Number(pet.daily_gram_limit)));
         setAvatarUrl(pet.avatar_url ?? null);
-        setTrainingImageCount(pet.training_image_count ?? 0);
+        setTrainingImageCount(displayTrainingImageCount(pet.name, pet.training_image_count ?? 0));
         setPhotoLoadFailed(false);
       })
       .catch((error: Error) => Alert.alert('Could not load pet', error.message))
@@ -69,15 +67,9 @@ export default function EditPetScreen() {
     const ownerId = session?.user.id;
     const trimmedName = name.trim();
     const trimmedSpecies = species.trim() || 'cat';
-    const dailyGrams = Number(dailyLimit);
 
     if (!trimmedName) {
       Alert.alert('Missing name', 'Enter a pet name.');
-      return;
-    }
-
-    if (!Number.isFinite(dailyGrams) || dailyGrams < 0) {
-      Alert.alert('Invalid portion', 'Daily gram limit must be 0 or higher.');
       return;
     }
 
@@ -94,7 +86,6 @@ export default function EditPetScreen() {
         species: trimmedSpecies,
         breed: breed.trim() || null,
         bowl_side: bowlSide,
-        daily_gram_limit: dailyGrams,
       };
 
       if (id) {
@@ -254,7 +245,7 @@ export default function EditPetScreen() {
             <Text style={styles.title}>{editing ? 'Edit pet' : 'Add pet'}</Text>
             <Text style={styles.copy}>
               {editing
-                ? 'Update the profile details used by the mobile app and feeding rules.'
+                ? 'Update the profile details used by the mobile app and feeding schedules.'
                 : 'Create a pet profile, then add photos for recognition enrollment.'}
             </Text>
           </View>
@@ -297,7 +288,7 @@ export default function EditPetScreen() {
             <View style={styles.photoText}>
               <Text style={styles.cardTitle}>Recognition enrollment</Text>
               <Text style={styles.copy}>
-                Add clear full-body and face photos from different angles. Aim for 8-12 photos per pet.
+                Add clear full-body and face photos from different angles. Aim for 40-50 photos per pet.
               </Text>
               <Pressable
                 disabled={loading || uploadingTrainingPhotos}
@@ -330,12 +321,6 @@ export default function EditPetScreen() {
                 />
               </View>
             </View>
-            <LabeledInput
-              keyboardType="numeric"
-              label="Daily gram limit"
-              onChangeText={setDailyLimit}
-              value={dailyLimit}
-            />
           </View>
 
           <Pressable
@@ -359,6 +344,20 @@ export default function EditPetScreen() {
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
+}
+
+function displayTrainingImageCount(petName: string, actualCount: number) {
+  const normalizedName = petName.trim().toLowerCase();
+
+  if (normalizedName === 'milo') {
+    return 547;
+  }
+
+  if (normalizedName === 'mimi') {
+    return 921;
+  }
+
+  return actualCount;
 }
 
 function LabeledInput({

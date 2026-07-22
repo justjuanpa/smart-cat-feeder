@@ -1,17 +1,19 @@
 {
   "expo": {
-    "name": "app",
-    "slug": "app",
+    "name": "PAWS",
+    "slug": "paws-pet-feeder",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "app",
+    "scheme": "paws",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
+      "bundleIdentifier": "com.justjuanpa.paws",
       "supportsTablet": true
     },
     "android": {
+      "package": "com.justjuanpa.paws",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -19,7 +21,10 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "output": "static",
@@ -51,6 +56,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "ab2f3d4b-6370-494b-a472-66d71e0ba0a0"
+      }
+    },
+    "owner": "justjuanpa"
   }
 }

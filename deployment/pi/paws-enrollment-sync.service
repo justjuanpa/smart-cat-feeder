@@ -1,0 +1,13 @@
+[Unit]
+Description=PAWS pet enrollment sync
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/paws-feeder/paws.env
+ExecStart=/usr/sbin/runuser -u justjuanpa -- /opt/paws-feeder/sync-enrollment.sh
+ExecStartPost=/bin/bash -lc 'if [ -f /tmp/paws-enrollment-updated ]; then rm -f /tmp/paws-enrollment-updated; systemctl try-restart paws-feeder.service; fi'
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,19 @@
+[Unit]
+Description=PAWS smart feeder runtime
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=justjuanpa
+Group=justjuanpa
+EnvironmentFile=/etc/paws-feeder/paws.env
+WorkingDirectory=/home/justjuanpa/Projects/smart-cat-feeder
+ExecStart=/opt/paws-feeder/run-feeder.sh
+Restart=always
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=25
+
+[Install]
+WantedBy=multi-user.target

@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -22,6 +23,7 @@ DEFAULT_TRAIN_DIR = SCRIPT_DIR / "app_enrollment_training"
 DEFAULT_CROP_DIR = SCRIPT_DIR / "app_enrollment_training_crops"
 DEFAULT_PROFILE_PATH = SCRIPT_DIR / "pet_profiles_phone_sim_crops.npz"
 DEFAULT_BOWL_MAP_PATH = SCRIPT_DIR / "pet_bowl_map.json"
+DEFAULT_MANIFEST_PATH = SCRIPT_DIR / "app_enrollment_manifest.json"
 DEFAULT_MODEL_PATH = AI_MODEL_DIR / "yolov8n_ncnn_model"
 ALLOWED_CROP_CLASSES = {"cat", "dog", "teddy bear"}
 DEFAULT_YOLO_CONFIDENCE = 0.25
@@ -279,7 +281,7 @@ def build_profiles(synced_pets, output_path, min_images, merge_existing=True):
             )
 
         app_profile = recognizer.build_embedding_set_from_folders([pet_dir])
-        profiles[pet_key] = merge_profile_vectors(profiles.get(pet_key), app_profile)
+        profiles[pet_key] = app_profile
         updated_pet_keys.add(pet_key)
         print(f"Built profile for {pet_key} from {count} image(s).")
 
@@ -330,14 +332,46 @@ def load_existing_profiles(profile_path):
     return profiles
 
 
-def merge_profile_vectors(existing, incoming):
-    if existing is None:
-        return incoming
+def enrollment_manifest_hash(pets):
+    manifest = []
 
-    existing_vectors = np.atleast_2d(existing)
-    incoming_vectors = np.atleast_2d(incoming)
+    for pet in pets:
+        images = pet.get("images") or []
+        manifest.append(
+            {
+                "name": str(pet.get("name") or "").strip().lower(),
+                "bowl_side": str(pet.get("bowl_side") or "").strip().upper(),
+                "images": sorted(
+                    str(image.get("storage_path") or "")
+                    for image in images
+                    if image.get("storage_path")
+                ),
+            }
+        )
 
-    return np.vstack([existing_vectors, incoming_vectors])
+    encoded = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def manifest_is_unchanged(manifest_path, manifest_hash):
+    if not manifest_path.exists():
+        return False
+
+    try:
+        cached = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+
+    return cached.get("hash") == manifest_hash
+
+
+def save_manifest(manifest_path, manifest_hash):
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(
+        json.dumps({"hash": manifest_hash}, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    print(f"Saved enrollment manifest cache to {manifest_path}")
 
 
 def backup_existing_profile(profile_path):
@@ -405,6 +439,17 @@ def main():
         help="Pet-to-bowl JSON map to write for uart_pet_gate.py.",
     )
     parser.add_argument(
+        "--manifest-cache",
+        type=Path,
+        default=DEFAULT_MANIFEST_PATH,
+        help="Manifest hash cache used to skip unchanged enrollment rebuilds.",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Rebuild profiles even when the enrollment manifest has not changed.",
+    )
+    parser.add_argument(
         "--crop-dir",
         type=Path,
         default=DEFAULT_CROP_DIR,
@@ -449,7 +494,7 @@ def main():
         action="store_true",
         help=(
             "Replace the profile file with only app enrollment images. "
-            "By default, existing Pi-trained profiles are preserved and app images are merged in."
+            "By default, existing Pi-trained profiles are preserved for pets without app images."
         ),
     )
     args = parser.parse_args()
@@ -463,8 +508,14 @@ def main():
         print(f"Enrollment sync failed <= HTTP {status}: {response}", file=sys.stderr)
         return 1
 
-    synced_pets = sync_training_images(response.get("pets", []), args.train_dir, clean=args.clean)
-    save_bowl_map(response.get("pets", []), args.output_bowl_map)
+    pets = response.get("pets", [])
+    manifest_hash = enrollment_manifest_hash(pets)
+    if not args.force and manifest_is_unchanged(args.manifest_cache, manifest_hash):
+        print("Enrollment manifest unchanged; skipping profile rebuild.")
+        return 0
+
+    synced_pets = sync_training_images(pets, args.train_dir, clean=args.clean)
+    save_bowl_map(pets, args.output_bowl_map)
     profile_pets = (
         synced_pets
         if args.no_yolo_crop
@@ -483,6 +534,7 @@ def main():
         args.min_images,
         merge_existing=not args.replace_existing,
     )
+    save_manifest(args.manifest_cache, manifest_hash)
 
     return 0
 

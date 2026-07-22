@@ -1,0 +1,12 @@
+[Unit]
+Description=Run PAWS pet enrollment sync periodically
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=2min
+AccuracySec=15s
+Persistent=true
+Unit=paws-enrollment-sync.service
+
+[Install]
+WantedBy=timers.target
